@@ -1,6 +1,7 @@
+pub(crate) mod common;
 pub mod deb;
 
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, fmt::Display, collections::HashMap};
 
 use enum_dispatch::enum_dispatch;
 use enumflags2::BitFlags;
@@ -17,10 +18,9 @@ pub trait PackageBehavior {
 
     fn install(&mut self, file_name: &Path) -> Result<()>;
     fn test(&mut self, file_name: &Path) -> Result<Vec<String>>;
-    fn unpack(&mut self) -> PathBuf;
-    fn prepare(&mut self);
-    fn clean_tree(&self) {}
-    fn build(&mut self) -> PathBuf;
+    fn unpack(&mut self) -> Result<PathBuf>;
+    fn prepare(&mut self, unpacked_dir: &Path) -> Result<()>;
+    fn build(&mut self, unpacked_dir: &Path) -> Result<PathBuf>;
     fn revert(&mut self) {}
 
     fn check_file(&mut self, file_name: &str) -> bool;
@@ -56,7 +56,7 @@ pub struct PackageInfo {
     pub release: u32,
     pub arch: String,
     pub maintainer: String,
-    pub depends: String, // vec?
+    pub depends: Vec<String>,
     pub group: String,
     pub summary: String,
     pub description: String,
@@ -73,13 +73,22 @@ pub struct PackageInfo {
     pub prerm: Option<String>,
     pub postinst: Option<String>,
     pub postrm: Option<String>,
-
-    pub unpacked_tree: Option<PathBuf>,
-    // pub owninfo: Option<HashMap<String, OwnInfo>>,
-    // pub modeinfo: Option<HashMap<String, ModeInfo>>,
+    pub owninfo: HashMap<String, String>,
+    pub modeinfo: HashMap<String, String>,
+}
+impl PackageInfo {
+    pub fn scripts(&self) -> Vec<&str> {
+        [&self.postinst, &self.postrm, &self.preinst, &self.prerm]
+            .into_iter()
+            .filter_map(|o| o.as_deref())
+            .collect()
+    }
 }
 
+#[derive(Debug, Clone, Default)]
 pub struct OwnInfo {}
+
+#[derive(Debug, Clone, Default)]
 pub struct ModeInfo {}
 
 #[enumflags2::bitflags]
@@ -121,5 +130,17 @@ impl Format {
             set |= Self::Deb;
         }
         set
+    }
+}
+impl Display for Format {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Format::Deb => "deb",
+            Format::Lsb => "lsb",
+            Format::Pkg => "pkg",
+            Format::Rpm => "rpm",
+            Format::Slp => "slp",
+            Format::Tgz => "tgz",
+        })
     }
 }

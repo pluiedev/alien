@@ -135,28 +135,41 @@ fn main() -> Result<()> {
         if !file.try_exists()? {
             bail!("File \"{}\" not found.", file.display());
         }
-        let mut package = Package::new(file.clone(), &args)?;
+        let mut pkg = Package::new(file.clone(), &args)?;
 
         if let Some(arch) = &args.target {
-            package.set_arch(arch);
+            pkg.set_arch(arch);
         }
 
-        // TODO: usescript
+        let scripts = pkg.info().scripts();
+        if !pkg.info().use_scripts && !scripts.is_empty() {
+            if !args.scripts {
+                eprintln!(
+                    "Warning: Skipping conversion of scripts in package {}: {}.",
+                    pkg.info().name,
+                    scripts.join(" ")
+                );
+                eprintln!("Warning: Use the --scripts parameter to include the scripts.");
+            }
+            pkg.info_mut().use_scripts = args.scripts;
+        }
 
         if !args.keep_version {
-            package.increment_release(args.bump);
+            pkg.increment_release(args.bump);
         }
 
         for format in formats {
-            if args.generate || package.info().original_format != format {
+            if args.generate || pkg.info().original_format != format {
                 // Only unpack once.
-                let tree = match &package.info().unpacked_tree {
-                    Some(u) => {
-                        package.clean_tree();
-                        u.clone()
-                    }
-                    None => package.unpack(),
-                };
+                // it's not possible to unpack multiple times with our architecture
+                // let tree = match &pkg.info().unpacked_tree {
+                //     Some(u) => {
+                //         pkg.clean_tree();
+                //         u
+                //     }
+                //     None => pkg.unpack()?,
+                // }.to_owned();
+                let unpacked = pkg.unpack()?;
 
                 // Make .orig.tar.gz directory?
                 if format == Format::Deb && !args.single && !args.generate {
@@ -164,13 +177,13 @@ fn main() -> Result<()> {
                         overwrite: true,
                         ..Default::default()
                     };
-                    fs_extra::dir::copy(&tree, tree.with_extension("orig"), &option)?;
+                    fs_extra::dir::copy(&unpacked, unpacked.with_extension("orig"), &option)?;
                 }
 
-                package.prepare();
+                pkg.prepare(&unpacked)?;
 
                 if args.generate {
-                    let tree = tree.display();
+                    let tree = unpacked.display();
                     if format == Format::Deb && !args.single {
                         println!("Directories {tree} and {tree}.orig prepared.");
                     } else {
@@ -178,13 +191,13 @@ fn main() -> Result<()> {
                     }
                     // Make sure `package` does not wipe out the
                     // directory when it is destroyed.
-                    package.info_mut().unpacked_tree = None;
+                    // pkg.info_mut().unpacked_tree = None;
                     continue;
                 }
 
-                let new_file = package.build();
+                let new_file = pkg.build(&unpacked)?;
                 if args.test {
-                    let results = package.test(&new_file)?;
+                    let results = pkg.test(&new_file)?;
                     if !results.is_empty() {
                         println!("Test results:");
                         for result in results {
@@ -193,7 +206,7 @@ fn main() -> Result<()> {
                     }
                 }
                 if args.install {
-                    package.install(&new_file)?;
+                    pkg.install(&new_file)?;
                     std::fs::remove_file(&new_file)?;
                 } else {
                     // Tell them where the package ended up.
@@ -201,11 +214,11 @@ fn main() -> Result<()> {
                 }
             } else if args.install {
                 // Don't convert the package, but do install it.
-                package.install(&file)?;
+                pkg.install(&file)?;
                 // Note I don't remove it. I figure that might annoy
                 // people, since it was an input file.
             }
-            package.revert();
+            pkg.revert();
         }
     }
 
