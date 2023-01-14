@@ -12,7 +12,6 @@ use std::{
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use fs_extra::dir::CopyOptions;
-use regex::Regex;
 use simple_eyre::eyre::{bail, Context, Result};
 use subprocess::Exec;
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
@@ -178,12 +177,12 @@ impl Deb {
 		let index = old.find("\n").unwrap_or(old.len());
 		let first_line = &old[..index];
 
-		if Regex::new(r#"^#!\s*/bin/(ba)?sh/"#)
-			.unwrap()
-			.is_match(first_line)
-		{
-			eprintln!("warning: unable to add ownership fixup code to postinst as the postinst is not a shell script!");
-			return;
+		if let Some(s) = first_line.strip_prefix("#!") {
+			let s = s.trim_start();
+			if let "/bin/bash" | "/bin/sh" = s {
+				eprintln!("warning: unable to add ownership fixup code to postinst as the postinst is not a shell script!");
+				return;
+			}
 		}
 
 		let mut injection = String::from("\n# alien added permissions fixup code");
