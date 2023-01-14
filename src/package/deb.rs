@@ -12,6 +12,7 @@ use std::{
 
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
+use fs_extra::dir::CopyOptions;
 use regex::Regex;
 use simple_eyre::eyre::{bail, Context, Result};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
@@ -33,6 +34,7 @@ pub struct Deb {
 	dpkg_deb: Option<PathBuf>,
 	fix_perms: bool,
 	patch_file: Option<PathBuf>,
+	dir_map: HashMap<PathBuf, PathBuf>,
 }
 impl Deb {
 	pub fn check_file(file: &Path) -> bool {
@@ -147,6 +149,7 @@ impl Deb {
 			dpkg_deb,
 			fix_perms: args.fixperms,
 			patch_file,
+			dir_map: HashMap::new(),
 		})
 	}
 	fn save_script(&self, debian_dir: &Path, script: &str, mut data: String) -> Result<()> {
@@ -245,6 +248,17 @@ impl PackageBehavior for Deb {
 		// Use a patch file to debianize?
 		if let Some(patch) = &self.patch_file {
 			// TODO: handle patch bullshit
+			let unzipped = GzDecoder::new(File::open(patch)?);
+			unzipped.read_to_end(&mut data);
+
+			Exec::cmd("patch")
+				.arg("-p1")
+				.arg("-d")
+				.arg(&debian_dir)
+				.stdin(data)
+				.capture()
+				.wrap_err("patch error")?;
+			
 
 			return Ok(());
 		}
@@ -433,8 +447,31 @@ binary: binary-indep binary-arch
 			// There may be a postinst with permissions fixups even when scripts are disabled.
 			self.save_script(&debian_dir, "postinst", String::new())?;
 		}
-		
 
+		// Move files to FHS-compliant locations, if possible.
+		// Note: no trailling slashes on these directory names!
+		for old_dir in ["/usr/man", "/usr/info", "/usr/doc"] {
+			let old_dir = debian_dir.join(old_dir);
+			let mut new_dir = debian_dir.join("/usr/share/");
+			new_dir.push(old_dir.file_name().unwrap());
+
+			if old_dir.exists() && !new_dir.exists() {
+				// Ignore failure..
+				let dir_base = new_dir.parent().unwrap_or(&new_dir);
+				Command::new("install")
+					.arg("-d")
+					.arg(dir_base)
+					.log_and_spawn(None)?;
+
+				fs_extra::dir::move_dir(&old_dir, &new_dir, &CopyOptions::new())?;
+				if old_dir.exists() {
+					std::fs::remove_dir_all(&old_dir)?;
+				}
+
+				// store for cleantree
+				self.dir_map.insert(old_dir, new_dir);
+			}
+		}
 		Ok(())
 	}
 
