@@ -7,7 +7,6 @@ use std::{
 	io::{BufRead, Cursor, Read, Write},
 	os::unix::prelude::OpenOptionsExt,
 	path::{Path, PathBuf},
-	process::Command,
 };
 
 use bzip2::read::BzDecoder;
@@ -15,11 +14,12 @@ use flate2::read::GzDecoder;
 use fs_extra::dir::CopyOptions;
 use regex::Regex;
 use simple_eyre::eyre::{bail, Context, Result};
+use subprocess::Exec;
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 use xz::read::XzDecoder;
 
 use crate::{
-	util::{CommandExt, Verbosity},
+	util::{ExecExt, Verbosity},
 	Args,
 };
 
@@ -208,9 +208,9 @@ impl PackageBehavior for Deb {
 		&mut self.info
 	}
 	fn install(&mut self, file_name: &Path) -> Result<()> {
-		Command::new("dpkg")
-			.args(["--no-force-overwrite", "-i"])
-			.arg(file_name)
+		Exec::cmd("dpkg")
+			.args(&["--no-force-overwrite", "-i"])
+			.arg(&file_name)
 			.log_and_spawn(Verbosity::VeryVerbose)
 			.wrap_err("Unable to install")?;
 		Ok(())
@@ -221,10 +221,12 @@ impl PackageBehavior for Deb {
             return Ok(vec!["lintian not available, so not testing".into()]);
         };
 
-		let strings = Command::new(lintian)
+		let output = Exec::cmd(lintian)
 			.arg(file_name)
-			.output()?
-			.stdout
+			.log_and_output(None)?
+			.stdout;
+
+		let strings = output
 			.lines()
 			.filter_map(|s| s.ok())
 			// Ignore errors we don't care about
@@ -247,18 +249,17 @@ impl PackageBehavior for Deb {
 
 		// Use a patch file to debianize?
 		if let Some(patch) = &self.patch_file {
-			// TODO: handle patch bullshit
-			let unzipped = GzDecoder::new(File::open(patch)?);
-			unzipped.read_to_end(&mut data);
+			let mut data = vec![];
+			let mut unzipped = GzDecoder::new(File::open(patch)?);
+			unzipped.read_to_end(&mut data)?;
 
 			Exec::cmd("patch")
 				.arg("-p1")
 				.arg("-d")
 				.arg(&debian_dir)
 				.stdin(data)
-				.capture()
-				.wrap_err("patch error")?;
-			
+				.log_and_output(None)
+				.wrap_err("Patch error")?;
 
 			return Ok(());
 		}
@@ -458,7 +459,7 @@ binary: binary-indep binary-arch
 			if old_dir.exists() && !new_dir.exists() {
 				// Ignore failure..
 				let dir_base = new_dir.parent().unwrap_or(&new_dir);
-				Command::new("install")
+				Exec::cmd("install")
 					.arg("-d")
 					.arg(dir_base)
 					.log_and_spawn(None)?;
@@ -526,14 +527,14 @@ fn fetch_control_files(
 	if let Some(dpkg_deb) = dpkg_deb {
 		let mut map = HashMap::new();
 		for file in control_files {
-			let out = Command::new(dpkg_deb)
+			let out = Exec::cmd(dpkg_deb)
 				.arg("--info")
 				.arg(deb_file)
 				.arg(file)
-				.log_and_output(None)?;
+				.log_and_output_without_checking(None)?;
 
-			if out.status.success() {
-				map.insert(*file, String::from_utf8(out.stdout)?);
+			if out.success() {
+				map.insert(*file, out.stdout_str());
 			}
 		}
 		Ok(map)
@@ -593,7 +594,7 @@ fn fetch_data_tar(
 	deb_file: &Path,
 ) -> Result<tar::Archive<Cursor<Vec<u8>>>> {
 	let tar = if let Some(dpkg_deb) = dpkg_deb {
-		Command::new(dpkg_deb)
+		Exec::cmd(dpkg_deb)
 			.arg("--fsys-tarfile")
 			.arg(deb_file)
 			.log_and_output(None)?
@@ -642,10 +643,7 @@ fn fetch_email_address() -> Result<String> {
 	}
 	let mailname = match std::fs::read_to_string("/etc/mailname") {
 		Ok(o) => o,
-		Err(_) => {
-			let output = Command::new("hostname").log_and_output(None)?;
-			String::from_utf8(output.stdout)?
-		}
+		Err(_) => Exec::cmd("hostname").log_and_output(None)?.stdout_str(),
 	};
 	Ok(format!("{}@{}", whoami::username(), mailname))
 }
