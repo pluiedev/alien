@@ -138,7 +138,7 @@ fn main() -> Result<()> {
         let mut pkg = Package::new(file.clone(), &args)?;
 
         if let Some(arch) = &args.target {
-            pkg.set_arch(arch);
+            pkg.set_arch(arch.clone());
         }
 
         let scripts = pkg.info().scripts();

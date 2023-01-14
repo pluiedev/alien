@@ -28,8 +28,9 @@ pub trait PackageBehavior {
     fn increment_release(&mut self, bump: u32) {
         self.info_mut().release += bump;
     }
-
-    fn set_arch(&mut self, arch: &str) {}
+    fn set_arch(&mut self, arch: String) {
+        self.info_mut().arch = arch;
+    }
 }
 
 #[enum_dispatch(PackageBehavior)]
