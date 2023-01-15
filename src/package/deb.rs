@@ -77,7 +77,7 @@ impl Deb {
 					description.push_str(c);
 					description.push('\n');
 				}
-			} else if let Some((f, value)) = c.split_once(":") {
+			} else if let Some((f, value)) = c.split_once(':') {
 				let value = value.trim().to_owned();
 				// Really old debs might have oddly capitalized field names.
 				field = f.to_ascii_lowercase();
@@ -103,8 +103,7 @@ impl Deb {
 		info.binary_info = control;
 
 		if let Some(conffiles) = control_files.remove("conffiles") {
-			info.conffiles
-				.extend(conffiles.lines().map(|s| s.trim().to_owned()));
+			info.conffiles.extend(conffiles.lines().map(PathBuf::from));
 		};
 
 		let mut data_tar = fetch_data_tar(dpkg_deb.as_deref(), &deb_file)?;
@@ -169,7 +168,7 @@ impl Deb {
 			old.push_str("#!/bin/sh\n");
 		}
 
-		let index = old.find("\n").unwrap_or(old.len());
+		let index = old.find('\n').unwrap_or(old.len());
 		let first_line = &old[..index];
 
 		if let Some(s) = first_line.strip_prefix("#!") {
@@ -184,11 +183,11 @@ impl Deb {
 
 		for (file, owi) in owninfo {
 			// no single quotes in single quotes...
-			let file = file.replace("'", r#"'"'"'"#);
-			write!(injection, "\nchown '{owi}' '{file}'").unwrap();
+			let escaped_file = file.to_string_lossy().replace('\'', r#"'"'"'"#);
+			write!(injection, "\nchown '{owi}' '{escaped_file}'").unwrap();
 
-			if let Some(mdi) = modeinfo.get(&file) {
-				write!(injection, "\nchmod '{mdi}' '{file}'").unwrap();
+			if let Some(mdi) = modeinfo.get(file) {
+				write!(injection, "\nchmod '{mdi}' '{escaped_file}'").unwrap();
 			}
 		}
 		old.insert_str(index, &injection);
@@ -204,7 +203,7 @@ impl PackageBehavior for Deb {
 	fn install(&mut self, file_name: &Path) -> Result<()> {
 		Exec::cmd("dpkg")
 			.args(&["--no-force-overwrite", "-i"])
-			.arg(&file_name)
+			.arg(file_name)
 			.log_and_spawn(Verbosity::VeryVerbose)
 			.wrap_err("Unable to install")?;
 		Ok(())
@@ -296,7 +295,7 @@ impl PackageBehavior for Deb {
 
 			Exec::cmd("patch")
 				.arg("-p1")
-				.cwd(&unpacked_dir)
+				.cwd(unpacked_dir)
 				.stdin(data)
 				.log_and_output(None)
 				.wrap_err("Patch error")?;
@@ -316,7 +315,7 @@ impl PackageBehavior for Deb {
 				changelog.read_line(&mut line)?;
 
 				// find the version inside the parens.
-				let Some((a, b)) = line.find("(").zip(line.find(")")) else {
+				let Some((a, b)) = line.find('(').zip(line.find(')')) else {
 					return Ok(());
 				};
 				// ensure no whitespace
@@ -356,7 +355,6 @@ impl PackageBehavior for Deb {
 		let date = OffsetDateTime::now_local()
 			.unwrap_or_else(|_| OffsetDateTime::now_utc())
 			.format(&Rfc2822)?;
-		let alien_version = env!("CARGO_PKG_VERSION");
 
 		{
 			// Changelog file.
@@ -372,13 +370,14 @@ r#"{name} ({version}-{release}) experimental; urgency=low
 
   -- {realname} <{email}>  {date}
 "#,
+				alien_version = env!("CARGO_PKG_VERSION")
             )?;
 		}
 		{
 			// Control file.
 			let mut file = File::create(debian_dir.join("control"))?;
 			#[rustfmt::skip]
-            writeln!(
+            write!(
                 file,
 r#"Source: {name}
 Section: alien
@@ -426,7 +425,7 @@ Information from the binary package:
 		if conffiles.peek().is_some() {
 			let mut file = File::create(debian_dir.join("conffiles"))?;
 			for conffile in conffiles {
-				writeln!(file, "{conffile}")?;
+				writeln!(file, "{}", conffile.display())?;
 			}
 		}
 
@@ -550,19 +549,18 @@ binary: binary-indep binary-arch
 		} = &self.info;
 
 		// Detect architecture mismatch and abort with a comprehensible error message.
-		if arch != "all" {
-			if !Exec::cmd("dpkg-architecture")
+		if arch != "all"
+			&& !Exec::cmd("dpkg-architecture")
 				.arg("-i")
 				.arg(arch)
 				.log_and_output(None)?
 				.success()
-			{
-				bail!(
-					"{} is for architecture {}; the package cannot be built on this system",
-					self.deb_file.display(),
-					arch
-				);
-			}
+		{
+			bail!(
+				"{} is for architecture {}; the package cannot be built on this system",
+				self.deb_file.display(),
+				arch
+			);
 		}
 
 		let log = Exec::cmd("debian/rules")
@@ -753,14 +751,14 @@ trait InfoExt {
 }
 impl InfoExt for PackageInfo {
 	fn set_version_and_release(&mut self, version: &str) -> Result<()> {
-		let (version, release) = if let Some((version, release)) = version.split_once("-") {
+		let (version, release) = if let Some((version, release)) = version.split_once('-') {
 			(version, release.parse()?)
 		} else {
 			(version, 1)
 		};
 
 		// Ignore epochs.
-		let version = version.split_once(":").map(|t| t.1).unwrap_or(version);
+		let version = version.split_once(':').map(|t| t.1).unwrap_or(version);
 
 		self.version = version.to_owned();
 		self.release = release;

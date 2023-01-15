@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use once_cell::sync::OnceCell;
 use simple_eyre::eyre::{bail, Result};
-use subprocess::{CaptureData, Exec, NullFile};
+use subprocess::{CaptureData, Exec, NullFile, Pipeline};
 
 use crate::Args;
 
@@ -44,7 +44,7 @@ impl ExecExt for Exec {
 	type Output = CaptureData;
 
 	fn log_and_spawn(mut self, verbosity: impl Into<Option<Verbosity>>) -> Result<()> {
-		let verbosity = verbosity.into().unwrap_or(Verbosity::get());
+		let verbosity = verbosity.into().unwrap_or_else(Verbosity::get);
 		let cmdline = self.to_cmdline_lossy();
 		if verbosity != Verbosity::Normal {
 			println!("\t{cmdline}");
@@ -73,10 +73,56 @@ impl ExecExt for Exec {
 		self,
 		verbosity: impl Into<Option<Verbosity>>,
 	) -> Result<CaptureData> {
-		let verbosity = verbosity.into().unwrap_or(Verbosity::get());
+		let verbosity = verbosity.into().unwrap_or_else(Verbosity::get);
 		let cmdline = self.to_cmdline_lossy();
 		if verbosity != Verbosity::Normal {
 			println!("\t{cmdline}");
+		}
+		let output = self.capture()?;
+
+		if verbosity == Verbosity::VeryVerbose {
+			let stdout = String::from_utf8_lossy(&output.stdout);
+			println!("{stdout}")
+		}
+		Ok(output)
+	}
+}
+
+impl ExecExt for Pipeline {
+	type Output = CaptureData;
+
+	fn log_and_spawn(mut self, verbosity: impl Into<Option<Verbosity>>) -> Result<()> {
+		let verbosity = verbosity.into().unwrap_or_else(Verbosity::get);
+		if verbosity != Verbosity::Normal {
+			println!("\t{self:?}");
+		}
+		if verbosity != Verbosity::VeryVerbose {
+			self = self.stdout(NullFile);
+		}
+		let capture = self.capture()?;
+		if !capture.success() {
+			bail!(
+				"Error executing command - stderr:\n{}",
+				capture.stderr_str()
+			)
+		}
+		Ok(())
+	}
+
+	fn log_and_output(self, verbosity: impl Into<Option<Verbosity>>) -> Result<CaptureData> {
+		let out = self.log_and_output_without_checking(verbosity)?;
+		if !out.success() {
+			bail!("Error executing command - stderr:\n{}", out.stderr_str())
+		}
+		Ok(out)
+	}
+	fn log_and_output_without_checking(
+		self,
+		verbosity: impl Into<Option<Verbosity>>,
+	) -> Result<CaptureData> {
+		let verbosity = verbosity.into().unwrap_or_else(Verbosity::get);
+		if verbosity != Verbosity::Normal {
+			println!("\t{self:?}");
 		}
 		let output = self.capture()?;
 

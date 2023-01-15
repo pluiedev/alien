@@ -9,13 +9,13 @@ use super::PackageInfo;
 
 #[cfg(unix)]
 pub fn chmod<P: AsRef<Path>>(path: P, mode: u32) -> std::io::Result<()> {
+	fn _chmod(path: &Path, mode: u32) -> std::io::Result<()> {
+		let mut perms = std::fs::metadata(path)?.permissions();
+		perms.set_mode(mode);
+		std::fs::set_permissions(path, perms)?;
+		Ok(())
+	}
 	_chmod(path.as_ref(), mode)
-}
-fn _chmod(path: &Path, mode: u32) -> std::io::Result<()> {
-	let mut perms = std::fs::metadata(&path)?.permissions();
-	perms.set_mode(mode);
-	std::fs::set_permissions(&path, perms)?;
-	Ok(())
 }
 
 #[cfg(not(unix))]
