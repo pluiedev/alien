@@ -86,7 +86,7 @@ impl Deb {
 
 				match field.as_str() {
 					"package" => info.name = value,
-					"version" => info.version = value,
+					"version" => info.set_version_and_release(&value)?,
 					"architecture" => info.arch = value,
 					"maintainer" => info.maintainer = value,
 					"section" => info.group = value,
@@ -278,13 +278,9 @@ impl PackageBehavior for Deb {
 					return Ok(());
 				};
 				// ensure no whitespace
-				let version = &line[a + 1..b].replace(|c: char| c.is_whitespace(), "");
+				let version = line[a + 1..b].replace(|c: char| c.is_whitespace(), "");
 
-				if let Some((version, release)) = version.split_once("-") {
-					self.info.version = version.to_owned();
-					self.info.release = release.parse()?;
-				}
-				self.info.version = version.to_owned();
+				self.info.set_version_and_release(&version)?;
 			}
 
 			return Ok(());
@@ -301,7 +297,6 @@ impl PackageBehavior for Deb {
 			arch,
 			depends,
 			summary,
-			description,
 			copyright,
 			binary_info,
 			conffiles,
@@ -326,7 +321,7 @@ impl PackageBehavior for Deb {
 			#[rustfmt::skip]
             writeln!(
                 file,
-r#"{name} ({version}-{release}) experimental; urgency=low
+r#"{name} ({}-{release}) experimental; urgency=low
 
   * Converted from {original_format} format to .deb by alien version {alien_version}
   
@@ -334,6 +329,7 @@ r#"{name} ({version}-{release}) experimental; urgency=low
 
   -- {realname} <{email}>  {date}
 "#,
+				self.info.version()
             )?;
 		}
 		{
@@ -359,8 +355,9 @@ Depends: ${{shlibs:Depends}}"#
                 file,
 r#"
 Description: {summary}
-{description}
-"#
+{}
+"#,
+				self.info.description()
             )?;
 		}
 		{
@@ -672,4 +669,67 @@ fn fetch_email_address() -> Result<String> {
 		Err(_) => Exec::cmd("hostname").log_and_output(None)?.stdout_str(),
 	};
 	Ok(format!("{}@{}", whoami::username(), mailname))
+}
+
+trait InfoExt {
+	fn version(&self) -> String;
+	fn set_version_and_release(&mut self, version: &str) -> Result<()>;
+	fn description(&self) -> String;
+}
+impl InfoExt for PackageInfo {
+	fn version(&self) -> String {
+		// filter out some characters not allowed in debian versions
+		// see lib/dpkg/parsehelp.c parseversion
+		fn valid_version_characters(c: &char) -> bool {
+			matches!(c, '-' | '.' | '+' | '~' | ':') || c.is_ascii_alphanumeric()
+		}
+
+		let iter = self.version.chars().filter(valid_version_characters);
+
+		if !self.version.starts_with(|c: char| c.is_ascii_digit()) {
+			// make sure the version contains a digit at the start, as required by dpkg-deb
+			std::iter::once('0').chain(iter).collect()
+		} else {
+			iter.collect()
+		}
+	}
+	fn set_version_and_release(&mut self, version: &str) -> Result<()> {
+		let (version, release) = if let Some((version, release)) = version.split_once("-") {
+			(version, release.parse()?)
+		} else {
+			(version, 1)
+		};
+
+		// Ignore epochs.
+		let version = version.split_once(":").map(|t| t.1).unwrap_or(version);
+
+		self.version = version.to_owned();
+		self.release = release;
+		Ok(())
+	}
+	fn description(&self) -> String {
+		let mut ret = String::new();
+		for line in self.description.lines() {
+			let line = line.replace('\t', "        "); // change tabs to spaces
+			let line = line.trim_end(); // remove trailing whitespace
+			let line = if line.is_empty() { "." } else { line }; // empty lines become dots
+			ret.push(' ');
+			ret.push_str(line);
+			ret.push('\n');
+		}
+		// remove leading blank lines
+		let mut ret = String::from(ret.trim_start_matches('\n'));
+		if !ret.is_empty() {
+			ret.push_str(" .\n");
+		}
+		write!(
+			ret,
+			" (Converted from a {} package by alien version {}.)",
+			self.original_format,
+			env!("CARGO_PKG_VERSION")
+		)
+		.unwrap();
+
+		ret
+	}
 }
