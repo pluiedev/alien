@@ -180,6 +180,7 @@ fn main() -> Result<()> {
                     fs_extra::dir::copy(&unpacked, unpacked.with_extension("orig"), &option)?;
                 }
 
+                pkg.sanitize_info()?;
                 pkg.prepare(&unpacked)?;
 
                 if args.generate {

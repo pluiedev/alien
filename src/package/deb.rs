@@ -13,7 +13,7 @@ use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use fs_extra::dir::CopyOptions;
 use simple_eyre::eyre::{bail, Context, Result};
-use subprocess::Exec;
+use subprocess::{Exec, Redirection};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 use xz::read::XzDecoder;
 
@@ -30,7 +30,6 @@ pub struct Deb {
 	info: PackageInfo,
 	deb_file: PathBuf,
 	data_tar: tar::Archive<Cursor<Vec<u8>>>,
-	dpkg_deb: Option<PathBuf>,
 	fix_perms: bool,
 	patch_file: Option<PathBuf>,
 	dir_map: HashMap<PathBuf, PathBuf>,
@@ -42,7 +41,6 @@ impl Deb {
 			None => false,
 		}
 	}
-
 	pub fn new(deb_file: PathBuf, args: &Args) -> Result<Self> {
 		let mut info = PackageInfo {
 			distribution: "Debian".into(),
@@ -139,13 +137,10 @@ impl Deb {
 			}
 		};
 
-		dbg!(&info);
-
 		Ok(Self {
 			info,
 			deb_file,
 			data_tar,
-			dpkg_deb,
 			fix_perms: args.fixperms,
 			patch_file,
 			dir_map: HashMap::new(),
@@ -163,7 +158,7 @@ impl Deb {
 	fn patch_post_inst(&self, old: &mut String) {
 		let PackageInfo {
 			owninfo, modeinfo, ..
-		} = self.info();
+		} = &self.info;
 
 		if owninfo.is_empty() {
 			return;
@@ -237,9 +232,56 @@ impl PackageBehavior for Deb {
 	}
 
 	fn unpack(&mut self) -> Result<PathBuf> {
-		let work_dir = common::make_unpack_work_dir(self.info())?;
+		let work_dir = common::make_unpack_work_dir(&self.info)?;
 		self.data_tar.unpack(&work_dir)?;
 		Ok(work_dir)
+	}
+
+	fn sanitize_info(&mut self) -> Result<()> {
+		// Version
+
+		// filter out some characters not allowed in debian versions
+		// see lib/dpkg/parsehelp.c parseversion
+		fn valid_version_characters(c: &char) -> bool {
+			matches!(c, '-' | '.' | '+' | '~' | ':') || c.is_ascii_alphanumeric()
+		}
+
+		let iter = self.info.version.chars().filter(valid_version_characters);
+
+		self.info.version = if !self.info.version.starts_with(|c: char| c.is_ascii_digit()) {
+			// make sure the version contains a digit at the start, as required by dpkg-deb
+			std::iter::once('0').chain(iter).collect()
+		} else {
+			iter.collect()
+		};
+
+		// Description
+
+		let mut desc = String::new();
+		for line in self.info.description.lines() {
+			let line = line.replace('\t', "        "); // change tabs to spaces
+			let line = line.trim_end(); // remove trailing whitespace
+			let line = if line.is_empty() { "." } else { line }; // empty lines become dots
+			desc.push(' ');
+			desc.push_str(line);
+			desc.push('\n');
+		}
+		// remove leading blank lines
+		let mut desc = String::from(desc.trim_start_matches('\n'));
+		if !desc.is_empty() {
+			desc.push_str(" .\n");
+		}
+		write!(
+			desc,
+			" (Converted from a {} package by alien version {}.)",
+			self.info.original_format,
+			env!("CARGO_PKG_VERSION")
+		)
+		.unwrap();
+
+		self.info.description = desc;
+
+		Ok(())
 	}
 
 	fn prepare(&mut self, unpacked_dir: &Path) -> Result<()> {
@@ -290,13 +332,14 @@ impl PackageBehavior for Deb {
 
 		let PackageInfo {
 			name,
-			version,
 			release,
+			version,
 			original_format,
 			changelog_text,
 			arch,
 			depends,
 			summary,
+			description,
 			copyright,
 			binary_info,
 			conffiles,
@@ -306,7 +349,7 @@ impl PackageBehavior for Deb {
 			preinst,
 			prerm,
 			..
-		} = self.info();
+		} = &self.info;
 
 		let realname = whoami::realname();
 		let email = fetch_email_address()?;
@@ -321,7 +364,7 @@ impl PackageBehavior for Deb {
 			#[rustfmt::skip]
             writeln!(
                 file,
-r#"{name} ({}-{release}) experimental; urgency=low
+r#"{name} ({version}-{release}) experimental; urgency=low
 
   * Converted from {original_format} format to .deb by alien version {alien_version}
   
@@ -329,7 +372,6 @@ r#"{name} ({}-{release}) experimental; urgency=low
 
   -- {realname} <{email}>  {date}
 "#,
-				self.info.version()
             )?;
 		}
 		{
@@ -355,9 +397,8 @@ Depends: ${{shlibs:Depends}}"#
                 file,
 r#"
 Description: {summary}
-{}
+{description}
 "#,
-				self.info.description()
             )?;
 		}
 		{
@@ -500,11 +541,47 @@ binary: binary-indep binary-arch
 	}
 
 	fn build(&mut self, unpacked_dir: &Path) -> Result<PathBuf> {
-		todo!()
-	}
+		let PackageInfo {
+			arch,
+			name,
+			version,
+			release,
+			..
+		} = &self.info;
 
-	fn check_file(&mut self, file_name: &str) -> bool {
-		todo!()
+		// Detect architecture mismatch and abort with a comprehensible error message.
+		if arch != "all" {
+			if !Exec::cmd("dpkg-architecture")
+				.arg("-i")
+				.arg(arch)
+				.log_and_output(None)?
+				.success()
+			{
+				bail!(
+					"{} is for architecture {}; the package cannot be built on this system",
+					self.deb_file.display(),
+					arch
+				);
+			}
+		}
+
+		let log = Exec::cmd("debian/rules")
+			.cwd(unpacked_dir)
+			.arg("binary")
+			.stderr(Redirection::Merge)
+			.log_and_output_without_checking(None)?;
+		if !log.success() {
+			if log.stderr.is_empty() {
+				bail!("Package build failed; could not run generated debian/rules file.");
+			}
+			bail!(
+				"Package build failed. Here's the log:\n{}",
+				log.stderr_str()
+			);
+		}
+
+		let path = format!("{name}_{version}-{release}_{arch}.deb");
+		Ok(PathBuf::from(path))
 	}
 }
 
@@ -672,27 +749,9 @@ fn fetch_email_address() -> Result<String> {
 }
 
 trait InfoExt {
-	fn version(&self) -> String;
 	fn set_version_and_release(&mut self, version: &str) -> Result<()>;
-	fn description(&self) -> String;
 }
 impl InfoExt for PackageInfo {
-	fn version(&self) -> String {
-		// filter out some characters not allowed in debian versions
-		// see lib/dpkg/parsehelp.c parseversion
-		fn valid_version_characters(c: &char) -> bool {
-			matches!(c, '-' | '.' | '+' | '~' | ':') || c.is_ascii_alphanumeric()
-		}
-
-		let iter = self.version.chars().filter(valid_version_characters);
-
-		if !self.version.starts_with(|c: char| c.is_ascii_digit()) {
-			// make sure the version contains a digit at the start, as required by dpkg-deb
-			std::iter::once('0').chain(iter).collect()
-		} else {
-			iter.collect()
-		}
-	}
 	fn set_version_and_release(&mut self, version: &str) -> Result<()> {
 		let (version, release) = if let Some((version, release)) = version.split_once("-") {
 			(version, release.parse()?)
@@ -706,30 +765,5 @@ impl InfoExt for PackageInfo {
 		self.version = version.to_owned();
 		self.release = release;
 		Ok(())
-	}
-	fn description(&self) -> String {
-		let mut ret = String::new();
-		for line in self.description.lines() {
-			let line = line.replace('\t', "        "); // change tabs to spaces
-			let line = line.trim_end(); // remove trailing whitespace
-			let line = if line.is_empty() { "." } else { line }; // empty lines become dots
-			ret.push(' ');
-			ret.push_str(line);
-			ret.push('\n');
-		}
-		// remove leading blank lines
-		let mut ret = String::from(ret.trim_start_matches('\n'));
-		if !ret.is_empty() {
-			ret.push_str(" .\n");
-		}
-		write!(
-			ret,
-			" (Converted from a {} package by alien version {}.)",
-			self.original_format,
-			env!("CARGO_PKG_VERSION")
-		)
-		.unwrap();
-
-		ret
 	}
 }

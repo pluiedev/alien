@@ -20,10 +20,9 @@ pub trait PackageBehavior {
     fn test(&mut self, file_name: &Path) -> Result<Vec<String>>;
     fn unpack(&mut self) -> Result<PathBuf>;
     fn prepare(&mut self, unpacked_dir: &Path) -> Result<()>;
+    fn sanitize_info(&mut self) -> Result<()>;
     fn build(&mut self, unpacked_dir: &Path) -> Result<PathBuf>;
     fn revert(&mut self) {}
-
-    fn check_file(&mut self, file_name: &str) -> bool;
 
     fn increment_release(&mut self, bump: u32) {
         self.info_mut().release += bump;
