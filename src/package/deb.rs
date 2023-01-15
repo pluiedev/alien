@@ -4,7 +4,7 @@ use std::{
 	ffi::OsStr,
 	fmt::Write as _,
 	fs::File,
-	io::{BufRead, Cursor, Read, Write},
+	io::{BufRead, BufReader, Cursor, Read, Write},
 	os::unix::prelude::OpenOptionsExt,
 	path::{Path, PathBuf},
 };
@@ -254,11 +254,38 @@ impl PackageBehavior for Deb {
 
 			Exec::cmd("patch")
 				.arg("-p1")
-				.arg("-d")
-				.arg(&debian_dir)
+				.cwd(&unpacked_dir)
 				.stdin(data)
 				.log_and_output(None)
 				.wrap_err("Patch error")?;
+
+			// If any .rej file exists, we dun goof'd
+			if glob::glob("*.rej").unwrap().any(|_| true) {
+				bail!("Patch failed with .rej files; giving up");
+			}
+			for orig in glob::glob("*.orig").unwrap() {
+				std::fs::remove_file(orig?)?;
+			}
+			common::chmod(debian_dir.join("rules"), 0o755)?;
+
+			if let Ok(changelog) = File::open(debian_dir.join("changelog")) {
+				let mut changelog = BufReader::new(changelog);
+				let mut line = String::new();
+				changelog.read_line(&mut line)?;
+
+				// find the version inside the parens.
+				let Some((a, b)) = line.find("(").zip(line.find(")")) else {
+					return Ok(());
+				};
+				// ensure no whitespace
+				let version = &line[a + 1..b].replace(|c: char| c.is_whitespace(), "");
+
+				if let Some((version, release)) = version.split_once("-") {
+					self.info.version = version.to_owned();
+					self.info.release = release.parse()?;
+				}
+				self.info.version = version.to_owned();
+			}
 
 			return Ok(());
 		}
