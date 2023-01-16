@@ -1,7 +1,3 @@
-pub(crate) mod common;
-pub mod deb;
-pub mod rpm;
-
 use std::{
 	collections::HashMap,
 	fmt::Display,
@@ -18,15 +14,19 @@ use crate::Args;
 
 use self::rpm::Rpm;
 
+pub(crate) mod common;
+pub mod deb;
+pub mod rpm;
+
 #[enum_dispatch]
 pub trait PackageBehavior {
 	fn info(&self) -> &PackageInfo;
 	fn info_mut(&mut self) -> &mut PackageInfo;
 
 	fn install(&mut self, file_name: &Path) -> Result<()>;
-	fn test(&mut self, file_name: &Path) -> Result<Vec<String>> {
-        Ok(vec![])
-    }
+	fn test(&mut self, _file_name: &Path) -> Result<Vec<String>> {
+		Ok(vec![])
+	}
 	fn unpack(&mut self) -> Result<PathBuf>;
 	fn prepare(&mut self, unpacked_dir: &Path) -> Result<()>;
 	fn sanitize_info(&mut self) -> Result<()>;
@@ -34,10 +34,16 @@ pub trait PackageBehavior {
 	fn revert(&mut self) {}
 
 	fn increment_release(&mut self, bump: u32) {
-		self.info_mut().release += bump;
-	}
-	fn set_arch(&mut self, arch: String) {
-		self.info_mut().arch = arch;
+		let release = &mut self.info_mut().release;
+
+		*release = if let Ok(num) = release.parse::<u32>() {
+			(num + bump).to_string()
+		} else {
+			// Perl's string-number addition thing is... cursed.
+			// If a string doesn't parse to a number, then it is treated as 0.
+			// So, we will just set the release to the bump here.
+			bump.to_string()
+		};
 	}
 }
 
@@ -50,9 +56,9 @@ impl Package {
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
 		// lsb > rpm > deb > tgz > slp > pkg
 
-        if Rpm::check_file(&file) {
-            Rpm::new(file).map(Package::Rpm)
-        } else if Deb::check_file(&file) {
+		if Rpm::check_file(&file) {
+			Rpm::new(file, args).map(Package::Rpm)
+		} else if Deb::check_file(&file) {
 			Deb::new(file, args).map(Package::Deb)
 		} else {
 			bail!("Unknown type of package, {}", file.display());
@@ -64,7 +70,7 @@ impl Package {
 pub struct PackageInfo {
 	pub name: String,
 	pub version: String,
-	pub release: u32,
+	pub release: String,
 	pub arch: String,
 	pub maintainer: String,
 	pub depends: Vec<String>,

@@ -1,6 +1,3 @@
-mod package;
-mod util;
-
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -8,6 +5,9 @@ use fs_extra::dir::CopyOptions;
 use package::{Format, Package, PackageBehavior};
 use simple_eyre::{eyre::bail, Result};
 use util::Verbosity;
+
+mod package;
+mod util;
 
 #[derive(clap::Parser, Debug)]
 pub struct Args {
@@ -134,10 +134,6 @@ fn main() -> Result<()> {
 			bail!("File \"{}\" not found.", file.display());
 		}
 		let mut pkg = Package::new(file.clone(), &args)?;
-
-		if let Some(arch) = &args.target {
-			pkg.set_arch(arch.clone());
-		}
 
 		let scripts = pkg.info().scripts();
 		if !pkg.info().use_scripts && !scripts.is_empty() {

@@ -127,6 +127,10 @@ impl Deb {
 		info.preinst = control_files.remove("preinst");
 		info.prerm = control_files.remove("prerm");
 
+		if let Some(arch) = &args.target {
+			info.arch = arch.clone();
+		}
+
 		let patch_file = if args.nopatch {
 			None
 		} else {
@@ -253,6 +257,12 @@ impl PackageBehavior for Deb {
 		} else {
 			iter.collect()
 		};
+
+		// Release
+		// Make sure the release contains digits.
+		if self.info.release.parse::<u32>().is_err() {
+			self.info.release.push_str("-1");
+		}
 
 		// Description
 
@@ -752,16 +762,16 @@ trait InfoExt {
 impl InfoExt for PackageInfo {
 	fn set_version_and_release(&mut self, version: &str) -> Result<()> {
 		let (version, release) = if let Some((version, release)) = version.split_once('-') {
-			(version, release.parse()?)
+			(version, release)
 		} else {
-			(version, 1)
+			(version, "1")
 		};
 
 		// Ignore epochs.
 		let version = version.split_once(':').map(|t| t.1).unwrap_or(version);
 
 		self.version = version.to_owned();
-		self.release = release;
+		self.release = release.to_owned();
 		Ok(())
 	}
 }
