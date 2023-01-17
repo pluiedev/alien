@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms, clippy::pedantic)]
-#![allow(clippy::redundant_closure_for_method_calls, clippy::module_name_repetitions)]
+#![allow(
+	clippy::redundant_closure_for_method_calls,
+	clippy::module_name_repetitions
+)]
 
 use std::path::PathBuf;
 
@@ -200,7 +203,7 @@ fn main() -> Result<()> {
 					println!("{} generated", new_file.display());
 				}
 
-				pkg.clean_tree();
+				pkg.clean_tree()?;
 			} else if args.install {
 				// Don't convert the package, but do install it.
 				// pkg.install(file)?;

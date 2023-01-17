@@ -108,8 +108,8 @@ impl TargetPackageBehavior for LsbTarget {
 		self.rpm.clear_unpacked_dir();
 	}
 
-	fn clean_tree(&mut self) {
-		self.rpm.clean_tree();
+	fn clean_tree(&mut self) -> Result<()> {
+		self.rpm.clean_tree()
 	}
 
 	/// Uses [`Rpm::build`] to build the package, using `lsb-rpmbuild` if available.

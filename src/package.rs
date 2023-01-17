@@ -45,7 +45,9 @@ pub trait SourcePackageBehavior {
 pub trait TargetPackageBehavior {
 	fn clear_unpacked_dir(&mut self);
 
-	fn clean_tree(&mut self);
+	fn clean_tree(&mut self) -> Result<()> {
+		Ok(())
+	}
 	fn build(&mut self) -> Result<PathBuf>;
 	fn test(&mut self, _file_name: &Path) -> Result<Vec<String>> {
 		Ok(vec![])

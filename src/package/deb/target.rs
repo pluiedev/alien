@@ -209,9 +209,10 @@ impl TargetPackageBehavior for DebTarget {
 		self.unpacked_dir.clear();
 	}
 
-	fn clean_tree(&mut self) {
+	fn clean_tree(&mut self) -> Result<()> {
 		todo!()
 	}
+
 	fn build(&mut self) -> Result<PathBuf> {
 		let PackageInfo {
 			arch,
