@@ -1,4 +1,9 @@
-//! Packages from different package managers.
+#![forbid(unsafe_code)]
+#![warn(rust_2018_idioms, clippy::pedantic)]
+#![allow(
+	clippy::redundant_closure_for_method_calls,
+	clippy::module_name_repetitions
+)]
 
 use std::{
 	collections::HashMap,
@@ -8,8 +13,12 @@ use std::{
 
 use enum_dispatch::enum_dispatch;
 use enumflags2::BitFlags;
-use simple_eyre::eyre::Result;
+use simple_eyre::eyre::{Result, bail};
 use util::Args;
+
+use deb::{DebSource, DebTarget};
+use lsb::{LsbSource, LsbTarget};
+use rpm::{RpmSource, RpmTarget};
 
 pub mod deb;
 pub mod lsb;
@@ -71,6 +80,53 @@ pub trait TargetPackage {
 
 	/// Installs the given package file.
 	fn install(&mut self, package: &Path) -> Result<()>;
+}
+
+#[enum_dispatch(SourcePackage)]
+pub enum AnySourcePackage {
+	Lsb(LsbSource),
+	Rpm(RpmSource),
+	Deb(DebSource),
+}
+impl AnySourcePackage {
+	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
+		// lsb > rpm > deb > tgz > slp > pkg
+
+		if LsbSource::check_file(&file) {
+			LsbSource::new(file, args).map(Self::Lsb)
+		} else if RpmSource::check_file(&file) {
+			RpmSource::new(file, args).map(Self::Rpm)
+		} else if DebSource::check_file(&file) {
+			DebSource::new(file, args).map(Self::Deb)
+		} else {
+			bail!("Unknown type of package, {}", file.display());
+		}
+	}
+}
+
+#[enum_dispatch(TargetPackage)]
+pub enum AnyTargetPackage {
+	Lsb(LsbTarget),
+	Rpm(RpmTarget),
+	Deb(DebTarget),
+}
+impl AnyTargetPackage {
+	pub fn new(
+		format: Format,
+		info: PackageInfo,
+		unpacked_dir: PathBuf,
+		args: &Args,
+	) -> Result<Self> {
+		let target = match format {
+			Format::Deb => Self::Deb(DebTarget::new(info, unpacked_dir, args)?),
+			Format::Lsb => Self::Lsb(LsbTarget::new(info, unpacked_dir)?),
+			Format::Pkg => todo!(),
+			Format::Rpm => Self::Rpm(RpmTarget::new(info, unpacked_dir)?),
+			Format::Slp => todo!(),
+			Format::Tgz => todo!(),
+		};
+		Ok(target)
+	}
 }
 
 /// Extracted information about a package.

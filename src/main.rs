@@ -1,21 +1,12 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms, clippy::pedantic)]
-#![allow(
-	clippy::redundant_closure_for_method_calls,
-	clippy::module_name_repetitions
-)]
-
-use std::path::PathBuf;
 
 use alien::{
-	deb::{DebSource, DebTarget},
-	lsb::{LsbSource, LsbTarget},
-	rpm::{RpmSource, RpmTarget},
 	util::{Args, Verbosity},
-	Format, PackageInfo, SourcePackage, TargetPackage,
+	Format, AnySourcePackage, AnyTargetPackage, SourcePackage, TargetPackage,
 };
 use clap::Parser;
-use enum_dispatch::enum_dispatch;
+
 use simple_eyre::{eyre::bail, Result};
 
 fn main() -> Result<()> {
@@ -121,51 +112,4 @@ fn main() -> Result<()> {
 	}
 
 	Ok(())
-}
-
-#[enum_dispatch(SourcePackage)]
-pub enum AnySourcePackage {
-	Lsb(LsbSource),
-	Rpm(RpmSource),
-	Deb(DebSource),
-}
-impl AnySourcePackage {
-	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
-		// lsb > rpm > deb > tgz > slp > pkg
-
-		if LsbSource::check_file(&file) {
-			LsbSource::new(file, args).map(Self::Lsb)
-		} else if RpmSource::check_file(&file) {
-			RpmSource::new(file, args).map(Self::Rpm)
-		} else if DebSource::check_file(&file) {
-			DebSource::new(file, args).map(Self::Deb)
-		} else {
-			bail!("Unknown type of package, {}", file.display());
-		}
-	}
-}
-
-#[enum_dispatch(TargetPackage)]
-pub enum AnyTargetPackage {
-	Lsb(LsbTarget),
-	Rpm(RpmTarget),
-	Deb(DebTarget),
-}
-impl AnyTargetPackage {
-	pub fn new(
-		format: Format,
-		info: PackageInfo,
-		unpacked_dir: PathBuf,
-		args: &Args,
-	) -> Result<Self> {
-		let target = match format {
-			Format::Deb => Self::Deb(DebTarget::new(info, unpacked_dir, args)?),
-			Format::Lsb => Self::Lsb(LsbTarget::new(info, unpacked_dir)?),
-			Format::Pkg => todo!(),
-			Format::Rpm => Self::Rpm(RpmTarget::new(info, unpacked_dir)?),
-			Format::Slp => todo!(),
-			Format::Tgz => todo!(),
-		};
-		Ok(target)
-	}
 }
