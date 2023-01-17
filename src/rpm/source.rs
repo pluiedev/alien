@@ -12,7 +12,7 @@ use simple_eyre::{
 use subprocess::{Exec, NullFile, Redirection};
 
 use crate::{
-	package::{Format, PackageInfo, SourcePackageBehavior},
+	{Format, PackageInfo, SourcePackage, Script, FileInfo},
 	util::{chmod, make_unpack_work_dir, ExecExt},
 	Args,
 };
@@ -79,12 +79,9 @@ impl RpmSource {
 		};
 
 		let mut scripts = HashMap::new();
-		for (field, name) in super::RPM_SCRIPT_NAMES_TEMPLATE
-			.iter()
-			.zip(PackageInfo::SCRIPTS)
-		{
-			let field = rpm.read_field(field)?;
-			scripts.insert(*name, sanitize_script(&prefixes, field));
+		for script in Script::ALL {
+			let field = rpm.read_field(script.rpm_query_key())?;
+			scripts.insert(script, sanitize_script(&prefixes, field));
 		}
 
 		let info = PackageInfo {
@@ -92,14 +89,14 @@ impl RpmSource {
 			version,
 			release,
 			arch: rpm.read_arch(args.target.as_deref())?,
-			changelog_text: rpm.read_field("%{CHANGELOGTEXT}")?.unwrap_or_default(),
+			changelog: rpm.read_field("%{CHANGELOGTEXT}")?.unwrap_or_default(),
 			summary,
 			description,
 			scripts,
 			copyright,
 
 			conffiles,
-			file_list,
+			files: file_list,
 			binary_info,
 
 			file,
@@ -111,7 +108,7 @@ impl RpmSource {
 		Ok(Self { info, prefixes })
 	}
 }
-impl SourcePackageBehavior for RpmSource {
+impl SourcePackage for RpmSource {
 	fn info(&self) -> &PackageInfo {
 		&self.info
 	}
@@ -249,8 +246,7 @@ impl SourcePackageBehavior for RpmSource {
 			.log_and_output(None)?
 			.stdout_str();
 
-		let mut owninfo = HashMap::new();
-		let mut modeinfo = HashMap::new();
+		let mut owninfo: HashMap<PathBuf, FileInfo> = HashMap::new();
 
 		for line in out.lines() {
 			let mut line = line.split(' ');
@@ -263,27 +259,28 @@ impl SourcePackageBehavior for RpmSource {
 			mode &= 0o7777; // remove filetype
 
 			let file = PathBuf::from(file);
+			let file_info = owninfo.entry(file.clone()).or_default();
 
 			// TODO: this is not gonna work on windows, is it
 			let user_id = match User::from_name(owner)? {
 				Some(User { uid, .. }) if uid.is_root() => uid,
 				_ => {
-					owninfo.insert(file.clone(), owner.to_owned());
+					file_info.owner = owner.to_owned();
 					Uid::from_raw(0)
 				}
 			};
 			let group_id = match Group::from_name(group)? {
 				Some(Group { gid, .. }) if gid.as_raw() == 0 => gid,
 				_ => {
-					let s = owninfo.entry(file.clone()).or_default();
-					s.push(':');
-					s.push_str(group);
+					file_info.owner.push(':');
+					file_info.owner.push_str(group);
 					Gid::from_raw(0)
 				}
 			};
 
-			if owninfo.contains_key(&file) && mode & 0o7000 > 0 {
-				modeinfo.insert(file.clone(), mode);
+			// If this is a `setuid` file
+			if !file_info.owner.is_empty() && mode & 0o7000 > 0 {
+				file_info.mode = Some(mode);
 			}
 
 			// Note that ghost files exist in the metadata but not in the cpio archive,
@@ -299,9 +296,7 @@ impl SourcePackageBehavior for RpmSource {
 					.wrap_err_with(|| format!("failed chowning {} to {mode}", file.display()))?;
 			}
 		}
-		self.info.owninfo = owninfo;
-		self.info.modeinfo = modeinfo;
-
+		self.info.file_info = owninfo;
 		Ok(work_dir)
 	}
 }

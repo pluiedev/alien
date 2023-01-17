@@ -13,7 +13,7 @@ use simple_eyre::{
 use subprocess::{Exec, Redirection};
 
 use crate::{
-	package::{PackageInfo, TargetPackageBehavior},
+	PackageInfo, TargetPackage, Script,
 	util::{ExecExt, Verbosity},
 };
 
@@ -27,7 +27,7 @@ impl RpmTarget {
 		Self::sanitize_info(&mut info);
 
 		let mut file_list = String::new();
-		for filename in &info.file_list {
+		for filename in &info.files {
 			// DIFFERENCE WITH THE PERL VERSION:
 			// `snailquote` doesn't escape the same characters as Perl, but that difference
 			// is negligible at best - feel free to implement Perl-style escaping if you want to.
@@ -55,7 +55,7 @@ impl RpmTarget {
 			name,
 			version,
 			release,
-			depends,
+			dependencies: depends,
 			summary,
 			copyright,
 			distribution,
@@ -111,11 +111,9 @@ Group: Converted/{group}
 		)?;
 
 		if *use_scripts {
-			for (name, script) in super::RPM_SCRIPT_NAMES
-				.iter()
-				.zip(PackageInfo::SCRIPTS)
-			{
-				let Some(script) = scripts.get(script) else { continue; };
+			for script in Script::ALL {
+				let name = script.rpm_scriptlet_name();
+				let Some(script) = scripts.get(&script) else { continue; };
 				write!(spec_file, "%{name}\n{script}\n\n")?;
 			}
 		}
@@ -220,8 +218,8 @@ r#"%description
 		// and rpm is limited to only shell scripts, we need to encode the files and add a
 		// scrap of shell script to make it unextract and run on the fly.
 
-		for script in PackageInfo::SCRIPTS {
-			let Some(script) = info.scripts.get_mut(script) else { return; };
+		for script in Script::ALL {
+			let Some(script) = info.scripts.get_mut(&script) else { return; };
 
 			if script.chars().all(char::is_whitespace) {
 				return; // it's blank.
@@ -266,10 +264,7 @@ rmdir /tmp/alien.$$
 	}
 }
 
-impl TargetPackageBehavior for RpmTarget {
-	fn clear_unpacked_dir(&mut self) {
-		self.unpacked_dir.clear();
-	}
+impl TargetPackage for RpmTarget {
 	fn clean_tree(&mut self) -> Result<()> {
 		std::fs::remove_file(&self.spec)?;
 		Ok(())

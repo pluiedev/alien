@@ -7,109 +7,16 @@
 
 use std::path::PathBuf;
 
+use alien::{
+	deb::{DebSource, DebTarget},
+	lsb::{LsbSource, LsbTarget},
+	rpm::{RpmSource, RpmTarget},
+	util::{Args, Verbosity},
+	Format, PackageInfo, SourcePackage, TargetPackage,
+};
 use clap::Parser;
-use package::{Format, SourcePackage, SourcePackageBehavior, TargetPackage, TargetPackageBehavior};
+use enum_dispatch::enum_dispatch;
 use simple_eyre::{eyre::bail, Result};
-use util::Verbosity;
-
-mod package;
-mod util;
-
-#[allow(clippy::struct_excessive_bools)]
-#[derive(clap::Parser, Debug)]
-pub struct Args {
-	/// Generate a Debian deb package (default).
-	#[arg(short = 'd', long)]
-	to_deb: bool,
-
-	// deb-specific settings
-	/// Specify patch file to use instead of automatically looking for patch
-	/// in /var/lib/alien.
-	#[arg(long, requires = "to_deb", value_parser = patch_file_exists)]
-	patch: Option<PathBuf>,
-	/// Do not use patches.
-	#[arg(long, requires = "to_deb", conflicts_with = "patch")]
-	nopatch: bool,
-	/// Use even old version os patches.
-	#[arg(long, requires = "to_deb")]
-	anypatch: bool,
-	/// Like --generate, but do not create .orig directory.
-	#[arg(short, long, requires = "to_deb")]
-	single: bool,
-	/// Munge/fix permissions and owners.
-	#[arg(long, requires = "to_deb")]
-	fixperms: bool,
-	/// Test generated packages with lintian.
-	#[arg(long, requires = "to_deb")]
-	test: bool,
-	// end deb-specific settings
-	/// Generate a Red Hat rpm package.
-	#[arg(short = 'r', long)]
-	to_rpm: bool,
-	/// Generate a Stampede slp package.
-	#[arg(long)]
-	to_slp: bool,
-	/// Generate a LSB package.
-	#[arg(short = 'l', long)]
-	to_lsb: bool,
-	/// Generate a Slackware tgz package.
-	#[arg(short = 't', long)]
-	to_tgz: bool,
-
-	// tgx-specific settings
-	/// Specify package description.
-	#[arg(long, requires = "to_tgz")]
-	description: Option<String>,
-
-	// /// Specify package version.
-	// #[arg(long, requires = "to_tgz", require_equals = true)]
-	// version: Option<String>,
-
-	// end tgx-specific settings
-	/// Generate a Solaris pkg package.
-	#[arg(short = 'p', long)]
-	to_pkg: bool,
-	/// Install generated package.
-	#[arg(short, long, conflicts_with_all = ["generate", "single"])]
-	install: bool,
-	/// Generate build tree, but do not build package.
-	#[arg(short, long)]
-	generate: bool,
-	/// Include scripts in package.
-	#[arg(short = 'c', long)]
-	scripts: bool,
-	/// Set architecture of the generated package.
-	#[arg(long)]
-	target: Option<String>,
-	/// Display each command alien runs.
-	#[arg(short, long)]
-	verbose: bool,
-	/// Be verbose, and also display output of run commands.
-	#[arg(long)]
-	veryverbose: bool,
-
-	// TODO: veryverbose
-	/// Do not change version of generated package.
-	#[arg(short, long)]
-	keep_version: bool,
-	/// Increment package version by this number.
-	#[arg(long, default_value_t = 1)]
-	bump: u32,
-
-	/// Package file or files to convert.
-	#[arg(required = true)]
-	files: Vec<PathBuf>,
-}
-
-fn patch_file_exists(s: &str) -> Result<PathBuf, String> {
-	let path = PathBuf::from(s);
-
-	if path.exists() {
-		Ok(path)
-	} else {
-		Err(format!("Specified patch file, \"{s}\" cannot be found."))
-	}
-}
 
 fn main() -> Result<()> {
 	simple_eyre::install()?;
@@ -140,7 +47,7 @@ fn main() -> Result<()> {
 		if !file.try_exists()? {
 			bail!("File \"{}\" not found.", file.display());
 		}
-		let mut pkg = SourcePackage::new(file.clone(), &args)?;
+		let mut pkg = AnySourcePackage::new(file.clone(), &args)?;
 
 		let scripts = &pkg.info().scripts;
 		if !pkg.info().use_scripts && !scripts.is_empty() {
@@ -151,7 +58,7 @@ fn main() -> Result<()> {
 				);
 				for (k, v) in scripts {
 					if !v.is_empty() {
-						eprint!(" {k}");
+						eprint!(" {}", k.deb_name());
 					}
 				}
 				eprintln!(".");
@@ -170,7 +77,7 @@ fn main() -> Result<()> {
 		for format in formats {
 			// Convert package
 			if args.generate || info.original_format != format {
-				let mut pkg = TargetPackage::new(format, info.clone(), unpacked.clone(), &args)?;
+				let mut pkg = AnyTargetPackage::new(format, info.clone(), unpacked.clone(), &args)?;
 
 				if args.generate {
 					let tree = unpacked.display();
@@ -181,7 +88,7 @@ fn main() -> Result<()> {
 					}
 					// Make sure `package` does not wipe out the
 					// directory when it is destroyed.
-					pkg.clear_unpacked_dir();
+					// unpacked.clear();
 					continue;
 				}
 
@@ -210,9 +117,55 @@ fn main() -> Result<()> {
 				// Note I don't remove it. I figure that might annoy
 				// people, since it was an input file.
 			}
-			// pkg.revert();
 		}
 	}
 
 	Ok(())
+}
+
+#[enum_dispatch(SourcePackage)]
+pub enum AnySourcePackage {
+	Lsb(LsbSource),
+	Rpm(RpmSource),
+	Deb(DebSource),
+}
+impl AnySourcePackage {
+	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
+		// lsb > rpm > deb > tgz > slp > pkg
+
+		if LsbSource::check_file(&file) {
+			LsbSource::new(file, args).map(Self::Lsb)
+		} else if RpmSource::check_file(&file) {
+			RpmSource::new(file, args).map(Self::Rpm)
+		} else if DebSource::check_file(&file) {
+			DebSource::new(file, args).map(Self::Deb)
+		} else {
+			bail!("Unknown type of package, {}", file.display());
+		}
+	}
+}
+
+#[enum_dispatch(TargetPackage)]
+pub enum AnyTargetPackage {
+	Lsb(LsbTarget),
+	Rpm(RpmTarget),
+	Deb(DebTarget),
+}
+impl AnyTargetPackage {
+	pub fn new(
+		format: Format,
+		info: PackageInfo,
+		unpacked_dir: PathBuf,
+		args: &Args,
+	) -> Result<Self> {
+		let target = match format {
+			Format::Deb => Self::Deb(DebTarget::new(info, unpacked_dir, args)?),
+			Format::Lsb => Self::Lsb(LsbTarget::new(info, unpacked_dir)?),
+			Format::Pkg => todo!(),
+			Format::Rpm => Self::Rpm(RpmTarget::new(info, unpacked_dir)?),
+			Format::Slp => todo!(),
+			Format::Tgz => todo!(),
+		};
+		Ok(target)
+	}
 }

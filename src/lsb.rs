@@ -7,7 +7,7 @@ use crate::{util::ExecExt, Args};
 
 use super::{
 	rpm::{RpmSource, RpmTarget},
-	Format, PackageInfo, SourcePackageBehavior, TargetPackageBehavior,
+	Format, PackageInfo, SourcePackage, TargetPackage,
 };
 pub struct LsbSource {
 	rpm: RpmSource,
@@ -42,13 +42,13 @@ impl LsbSource {
 
 		info.distribution = "Linux Standard Base".into();
 		info.original_format = Format::Lsb;
-		info.depends.push("lsb".into());
+		info.dependencies.push("lsb".into());
 		info.use_scripts = true;
 
 		Ok(Self { rpm })
 	}
 }
-impl SourcePackageBehavior for LsbSource {
+impl SourcePackage for LsbSource {
 	fn info(&self) -> &PackageInfo {
 		self.rpm.info()
 	}
@@ -69,50 +69,30 @@ impl SourcePackageBehavior for LsbSource {
 
 pub struct LsbTarget {
 	rpm: RpmTarget,
-	original_name: String,
-	original_depends: Vec<String>,
-	original_use_scripts: bool,
 }
 impl LsbTarget {
-	/// Uses [`Rpm::prepare`] to generate the spec file.
+	/// Uses [`RpmTarget::new`] to generate the spec file.
 	/// First though, the package's name is munged to make it LSB compliant (sorta)
 	/// and `lsb` is added to its dependencies.
 	pub fn new(mut info: PackageInfo, unpacked_dir: PathBuf) -> Result<Self> {
-		let PackageInfo {
-			name,
-			depends,
-			use_scripts,
-			..
-		} = &mut info;
-
-		let original_name = name.clone();
-		let original_depends = depends.clone();
-		let original_use_scripts = *use_scripts;
-
-		if !name.starts_with("lsb-") {
-			name.insert_str(0, "lsb-");
+		if !info.name.starts_with("lsb-") {
+			info.name.insert_str(0, "lsb-");
 		}
+		info.dependencies.push("lsb".into());
 
 		let rpm = RpmTarget::new(info, unpacked_dir)?;
 
 		Ok(Self {
 			rpm,
-			original_name,
-			original_depends,
-			original_use_scripts,
 		})
 	}
 }
-impl TargetPackageBehavior for LsbTarget {
-	fn clear_unpacked_dir(&mut self) {
-		self.rpm.clear_unpacked_dir();
-	}
-
+impl TargetPackage for LsbTarget {
 	fn clean_tree(&mut self) -> Result<()> {
 		self.rpm.clean_tree()
 	}
 
-	/// Uses [`Rpm::build`] to build the package, using `lsb-rpmbuild` if available.
+	/// Uses [`RpmTarget::build`] to build the package, using `lsb-rpmbuild` if available.
 	fn build(&mut self) -> Result<PathBuf> {
 		if let Ok(lsb_rpmbuild) = which::which("lsb-rpmbuild") {
 			self.rpm.build_with(&lsb_rpmbuild)
@@ -123,13 +103,5 @@ impl TargetPackageBehavior for LsbTarget {
 
 	fn install(&mut self, file_name: &Path) -> Result<()> {
 		self.rpm.install(file_name)
-	}
-
-	/// Undoes the changes made by [`Self::prepare`].
-	fn revert(&mut self) {
-		let info = &mut self.rpm.info;
-		info.name = self.original_name.clone();
-		info.depends = self.original_depends.clone();
-		info.use_scripts = self.original_use_scripts;
 	}
 }

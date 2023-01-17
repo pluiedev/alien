@@ -17,10 +17,8 @@ use xz::read::XzDecoder;
 
 use crate::{
 	util::{make_unpack_work_dir, ExecExt},
-	Args,
+	Args, Format, PackageInfo, Script, SourcePackage,
 };
-
-use crate::package::{Format, PackageInfo, SourcePackageBehavior};
 
 pub struct DebSource {
 	info: PackageInfo,
@@ -75,9 +73,12 @@ impl DebSource {
 
 		let mut data = Data::new(dpkg_deb.as_deref(), &info.file)?;
 
-		info.file_list.extend(data.files()?);
+		info.files.extend(data.files()?);
 
-		info.scripts = control_files;
+		info.scripts = control_files
+			.into_iter()
+			.filter_map(|(k, v)| Script::from_deb_name(k).map(|k| (k, v)))
+			.collect();
 
 		if let Some(arch) = &args.target {
 			info.arch = arch.clone();
@@ -86,7 +87,7 @@ impl DebSource {
 		Ok(Self { info, data })
 	}
 }
-impl SourcePackageBehavior for DebSource {
+impl SourcePackage for DebSource {
 	fn info(&self) -> &PackageInfo {
 		&self.info
 	}
@@ -260,7 +261,7 @@ fn read_control(info: &mut PackageInfo, control: &str) {
 				"maintainer" => info.maintainer = value,
 				"section" => info.group = value,
 				"description" => info.summary = value,
-				"depends" => info.depends = value.split(", ").map(|s| s.to_owned()).collect(),
+				"depends" => info.dependencies = value.split(", ").map(|s| s.to_owned()).collect(),
 				_ => { /* ignore */ }
 			}
 		}

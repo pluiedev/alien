@@ -15,10 +15,8 @@ use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 
 use crate::{
 	util::{chmod, fetch_email_address, ExecExt, Verbosity},
-	Args,
+	Args, PackageInfo, Script, TargetPackage,
 };
-
-use crate::package::{PackageInfo, TargetPackageBehavior};
 
 const PATCH_DIRS: &[&str] = &["/var/lib/alien", "/usr/share/alien/patches"];
 
@@ -212,11 +210,7 @@ impl DebTarget {
 		Ok(())
 	}
 }
-impl TargetPackageBehavior for DebTarget {
-	fn clear_unpacked_dir(&mut self) {
-		self.unpacked_dir.clear();
-	}
-
+impl TargetPackage for DebTarget {
 	fn clean_tree(&mut self) -> Result<()> {
 		let dir = &self.unpacked_dir;
 		for (old_dir, new_dir) in &self.dir_map {
@@ -350,7 +344,7 @@ impl DebWriter {
 			version,
 			release,
 			original_format,
-			changelog_text,
+			changelog: changelog_text,
 			..
 		} = info;
 
@@ -386,7 +380,7 @@ r#"{name} ({version}-{release}) experimental; urgency=low
 		let PackageInfo {
 			name,
 			arch,
-			depends,
+			dependencies: depends,
 			summary,
 			description,
 			..
@@ -554,21 +548,21 @@ binary: binary-indep binary-arch
 	}
 	fn write_scripts(&mut self) -> Result<()> {
 		// There may be a postinst with permissions fixups even when scripts are disabled.
-		self.write_script("postinst")?;
+		self.write_script(Script::AfterInstall)?;
 
 		if self.info.use_scripts {
-			self.write_script("postrm")?;
-			self.write_script("preinst")?;
-			self.write_script("prerm")?;
+			self.write_script(Script::BeforeInstall)?;
+			self.write_script(Script::AfterUninstall)?;
+			self.write_script(Script::BeforeUninstall)?;
 		}
 		Ok(())
 	}
-	fn write_script(&mut self, script_name: &str) -> Result<()> {
-		let data = self.info.scripts.get(script_name).cloned();
+	fn write_script(&mut self, script: Script) -> Result<()> {
+		let data = self.info.scripts.get(&script).cloned();
 
-		let data = if script_name == "postinst" {
+		let data = if script == Script::AfterInstall {
 			let mut data = data.unwrap_or_default();
-			self.patch_post_inst(&mut data);
+			self.patch_postinst(&mut data);
 			data
 		} else if let Some(data) = data {
 			data
@@ -577,18 +571,16 @@ binary: binary-indep binary-arch
 		};
 
 		if !data.trim().is_empty() {
-			self.dir.push(script_name);
+			self.dir.push(script.deb_name());
 			std::fs::write(&self.dir, data)?;
 			self.dir.pop();
 		}
 		Ok(())
 	}
-	fn patch_post_inst(&self, old: &mut String) {
-		let PackageInfo {
-			owninfo, modeinfo, ..
-		} = &self.info;
+	fn patch_postinst(&self, old: &mut String) {
+		let PackageInfo { file_info, .. } = &self.info;
 
-		if owninfo.is_empty() {
+		if file_info.is_empty() {
 			return;
 		}
 
@@ -610,13 +602,14 @@ binary: binary-indep binary-arch
 
 		let mut injection = String::from("\n# alien added permissions fixup code");
 
-		for (file, owi) in owninfo {
+		for (file, file_info) in file_info {
 			// no single quotes in single quotes...
 			let escaped_file = file.to_string_lossy().replace('\'', r#"'"'"'"#);
-			write!(injection, "\nchown '{owi}' '{escaped_file}'").unwrap();
+			let own_info = &file_info.owner;
+			write!(injection, "\nchown '{own_info}' '{escaped_file}'").unwrap();
 
-			if let Some(mdi) = modeinfo.get(file) {
-				write!(injection, "\nchmod '{mdi}' '{escaped_file}'").unwrap();
+			if let Some(mode_info) = file_info.mode {
+				write!(injection, "\nchmod '{mode_info}' '{escaped_file}'").unwrap();
 			}
 		}
 		old.insert_str(index, &injection);
