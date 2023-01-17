@@ -17,11 +17,15 @@ use subprocess::{Exec, NullFile, Redirection};
 
 use crate::{
 	package::Format,
-	util::{make_unpack_work_dir, chmod, ExecExt, Verbosity},
+	util::{chmod, make_unpack_work_dir, ExecExt, Verbosity},
 	Args,
 };
 
 use super::{PackageInfo, SourcePackageBehavior, TargetPackageBehavior};
+
+// RPM style script names.
+const RPM_SCRIPT_NAMES: &[&str] = &["pre", "post", "preun", "postun"];
+const RPM_SCRIPT_NAMES_TEMPLATE: &[&str] = &["%{PREIN}", "%{POSTIN}", "%{PREUN}", "%{POSTUN}"];
 
 pub struct RpmSource {
 	info: PackageInfo,
@@ -35,114 +39,25 @@ impl RpmSource {
 		}
 	}
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
-		// I'm lazy.
-		fn rpm() -> Exec {
-			Exec::cmd("rpm").env("LANG", "C")
-		}
-		let read_field = |name: &str| -> Result<Option<String>> {
-			let res = rpm()
-				.arg("-qp")
-				.arg("--queryformat")
-				.arg(name)
-				.arg(&file)
-				.log_and_output(None)?
-				.stdout_str();
+		let rpm = Rpm::new(&file);
 
-			Ok(if res == "(none)" { None } else { Some(res) })
-		};
+		let prefixes = rpm.read_field("%{PREFIXES}")?.map(PathBuf::from);
 
-		let prefixes = read_field("%{PREFIXES}")?.map(PathBuf::from);
-
-		// rpm maintainer scripts are typically shell scripts,
-		// but often lack the leading shebang line.
-		// This can confuse dpkg, so add the shebang if it looks like
-		// there is no shebang magic already in place.
-		//
-		// Additionally, it's not uncommon for rpm maintainer scripts to
-		// contain bashisms, which can be triggered when they are run on
-		// systems where /bin/sh is not bash. To work around this,
-		// the shebang line of the scripts is changed to use bash.
-		//
-		// Also if the rpm is relocatable, the script could refer to
-		// RPM_INSTALL_PREFIX, which is to set by rpm at runtime.
-		// Deal with this by adding code to the script to set RPM_INSTALL_PREFIX.
-
-		let sanitize_script = |s: Option<String>| -> Option<String> {
-			let prefix_code = prefixes
-				.as_ref()
-				.map(|p| {
-					format!(
-						"\nRPM_INSTALL_PREFIX={}\nexport RPM_INSTALL_PREFIX",
-						p.display()
-					)
-				})
-				.unwrap_or_default();
-
-			if let Some(t) = &s {
-				if let Some(t) = t.strip_prefix("#!") {
-					let t = t.trim_start();
-					if t.starts_with('/') {
-						let mut t = t.replacen("/bin/sh", "#!/bin/bash", 1);
-						if let Some(nl) = t.find('\n') {
-							t.insert_str(nl, &prefix_code);
-						}
-						return Some(t);
-					}
-				}
-			}
-			Some(format!(
-				"#!/bin/bash\n{prefix_code}{}",
-				s.unwrap_or_default()
-			))
-		};
-
-		let mut conffiles: Vec<_> = rpm()
-			.arg("-qcp")
-			.arg(&file)
-			.log_and_output(None)?
-			.stdout_str()
-			.lines()
-			.map(|s| PathBuf::from(s.trim()))
-			.collect();
-		if let Some(f) = conffiles.first() {
-			if f.as_os_str() == "(contains no files)" {
-				conffiles.clear();
-			}
-		}
-
-		let mut file_list: Vec<_> = rpm()
-			.arg("-qlp")
-			.arg(&file)
-			.log_and_output(None)?
-			.stdout_str()
-			.lines()
-			.map(|s| PathBuf::from(s.trim()))
-			.collect();
-		if let Some(f) = file_list.first() {
-			if f.as_os_str() == "(contains no files)" {
-				file_list.clear();
-			}
-		}
-
-		let binary_info = rpm()
-			.arg("-qip")
-			.arg(&file)
-			.log_and_output(None)?
-			.stdout_str();
+		let conffiles = rpm.read_file_list("-c")?;
+		let file_list = rpm.read_file_list("-l")?;
+		let binary_info = rpm.read("-qip")?;
 
 		// Sanity check and sanitize fields.
 
-		let description = read_field("%{DESCRIPTION}")?;
+		let description = rpm.read_field("%{DESCRIPTION}")?;
 
-		let summary = if let Some(summary) = read_field("%{SUMMARY}")? {
+		let summary = if let Some(summary) = rpm.read_field("%{SUMMARY}")? {
 			summary
 		} else {
 			// Older rpms will have no summary, but will have a description.
 			// We'll take the 1st line out of the description, and use it for the summary.
-			let description = description.as_deref().unwrap_or("");
-			let s = description
-				.split_once('\n')
-				.map_or(description, |t| t.0);
+			let description = description.as_deref().unwrap_or_default();
+			let s = description.split_once('\n').map_or(description, |t| t.0);
 			if s.is_empty() {
 				// Fallback.
 				"Converted RPM package".into()
@@ -154,62 +69,43 @@ impl RpmSource {
 		let description = description.unwrap_or_else(|| summary.clone());
 
 		// Older rpms have no license tag, but have a copyright.
-		let copyright = match read_field("%{LICENSE}")? {
+		let copyright = match rpm.read_field("%{LICENSE}")? {
 			Some(o) => o,
-			None => read_field("%{COPYRIGHT}")?.unwrap_or_else(|| "unknown".into()),
+			None => rpm
+				.read_field("%{COPYRIGHT}")?
+				.unwrap_or_else(|| "unknown".into()),
 		};
 
-		let Some(name) = read_field("%{NAME}")? else {
+		let Some(name) = rpm.read_field("%{NAME}")? else {
 			bail!("Error querying rpm file: name not found!")
 		};
-		let Some(version) = read_field("%{VERSION}")? else {
+		let Some(version) = rpm.read_field("%{VERSION}")? else {
 			bail!("Error querying rpm file: version not found!")
 		};
-		let Some(release) = read_field("%{RELEASE}")?
+		let Some(release) = rpm.read_field("%{RELEASE}")?
 			.and_then(|s| s.parse().ok())
 		else {
 			bail!("Error querying rpm file: release not found or invalid!")
 		};
 
-		let arch = if let Some(arch) = &args.target {
-			let arch = match arch.as_bytes() {
-				// NOTE(pluie): do NOT ask me where these numbers came from.
-				// I have NO clue.
-				b"1" => "i386",
-				b"2" => "alpha",
-				b"3" => "sparc",
-				b"6" => "m68k",
-				b"noarch" => "all",
-				b"ppc" => "powerpc",
-				b"x86_64" | b"em64t" => "amd64",
-				b"armv4l" => "arm",
-				b"armv7l" => "armel",
-				b"parisc" => "hppa",
-				b"ppc64le" => "ppc64el",
-
-				// Treat 486, 586, etc, and Pentium, as 386.
-				o if o.eq_ignore_ascii_case(b"pentium") => "i386",
-				&[b'i' | b'I', b'0'..=b'9', b'8', b'6'] => "i386",
-
-				_ => arch,
-			};
-			arch.to_owned()
-		} else {
-			read_field("%{ARCH}")?.unwrap_or_default()
-		};
+		let mut scripts = HashMap::new();
+		for (field, name) in RPM_SCRIPT_NAMES_TEMPLATE
+			.into_iter()
+			.zip(PackageInfo::SCRIPTS)
+		{
+			let field = rpm.read_field(field)?;
+			scripts.insert(*name, sanitize_script(&prefixes, field));
+		}
 
 		let info = PackageInfo {
 			name,
 			version,
 			release,
-			arch,
-			changelog_text: read_field("%{CHANGELOGTEXT}")?.unwrap_or_default(),
+			arch: rpm.read_arch(args.target.as_deref())?,
+			changelog_text: rpm.read_field("%{CHANGELOGTEXT}")?.unwrap_or_default(),
 			summary,
 			description,
-			preinst: sanitize_script(read_field("%{PREIN}")?),
-			postinst: sanitize_script(read_field("%{POSTIN}")?),
-			prerm: sanitize_script(read_field("%{PREUN}")?),
-			postrm: sanitize_script(read_field("%{POSTUN}")?),
+			scripts,
 			copyright,
 
 			conffiles,
@@ -463,10 +359,7 @@ impl RpmTarget {
 			distribution,
 			group,
 			use_scripts,
-			preinst,
-			postinst,
-			prerm,
-			postrm,
+			scripts,
 			description,
 			original_format,
 			..
@@ -515,17 +408,9 @@ Group: Converted/{group}
 		)?;
 
 		if *use_scripts {
-			if let Some(preinst) = preinst {
-				write!(spec, "%pre\n{preinst}\n\n")?;
-			}
-			if let Some(postinst) = postinst {
-				write!(spec, "%pre\n{postinst}\n\n")?;
-			}
-			if let Some(prerm) = prerm {
-				write!(spec, "%pre\n{prerm}\n\n")?;
-			}
-			if let Some(postrm) = postrm {
-				write!(spec, "%pre\n{postrm}\n\n")?;
+			for (name, script) in RPM_SCRIPT_NAMES.into_iter().zip(PackageInfo::SCRIPTS) {
+				let Some(script) = scripts.get(script) else { continue; };
+				write!(spec, "%{name}\n{script}\n\n")?;
 			}
 		}
 		#[rustfmt::skip]
@@ -625,20 +510,20 @@ r#"%description
 		// and rpm is limited to only shell scripts, we need to encode the files and add a
 		// scrap of shell script to make it unextract and run on the fly.
 
-		fn script_helper(script: &mut Option<String>) {
-			let Some(s) = script.as_mut() else { return; };
+		for script in PackageInfo::SCRIPTS {
+			let Some(script) = info.scripts.get_mut(script) else { return; };
 
-			if s.chars().all(char::is_whitespace) {
+			if script.chars().all(char::is_whitespace) {
 				return; // it's blank.
 			}
 
-			if let Some(s) = s.strip_prefix("#!") {
+			if let Some(s) = script.strip_prefix("#!") {
 				if s.trim_start().starts_with("/bin/sh") {
 					return; // looks like a shell script already
 				}
 			}
 			// The original used uuencoding. That is cursed. We don't do that here
-			let encoded = base64::engine::general_purpose::STANDARD.encode(&s);
+			let encoded = base64::engine::general_purpose::STANDARD.encode(&script);
 
 			#[rustfmt::skip]
 			let patched = format!(
@@ -652,15 +537,10 @@ rm -f /tmp/alien.$$/script
 rmdir /tmp/alien.$$
 "#
 			);
-			*script = Some(patched);
+			*script = patched;
 		}
-		
-		info.version = info.version.replace('-', "_");
 
-		script_helper(&mut info.preinst);
-		script_helper(&mut info.postinst);
-		script_helper(&mut info.prerm);
-		script_helper(&mut info.postrm);
+		info.version = info.version.replace('-', "_");
 
 		let arch = match info.arch.as_str() {
 			"amd64" => Some("x86_64"),
@@ -698,4 +578,121 @@ impl TargetPackageBehavior for RpmTarget {
 			.wrap_err("Unable to install")?;
 		Ok(())
 	}
+}
+
+struct Rpm<'r> {
+	file: &'r Path,
+}
+impl<'r> Rpm<'r> {
+	fn new(file: &'r Path) -> Self {
+		Self { file }
+	}
+
+	fn rpm() -> Exec {
+		Exec::cmd("rpm").env("LANG", "C")
+	}
+
+	fn read(&self, flags: &str) -> Result<String> {
+		Ok(Self::rpm()
+			.arg(flags)
+			.arg(self.file)
+			.log_and_output(None)?
+			.stdout_str())
+	}
+	fn read_field(&self, name: &str) -> Result<Option<String>> {
+		let res = Self::rpm()
+			.arg("-qp")
+			.arg("--queryformat")
+			.arg(name)
+			.arg(self.file)
+			.log_and_output(None)?
+			.stdout_str();
+
+		Ok(if res == "(none)" { None } else { Some(res) })
+	}
+	fn read_arch(&self, target: Option<&str>) -> Result<String> {
+		let arch = if let Some(arch) = &target {
+			let arch = match arch.as_bytes() {
+				// NOTE(pluie): do NOT ask me where these numbers came from.
+				// I have NO clue.
+				b"1" => "i386",
+				b"2" => "alpha",
+				b"3" => "sparc",
+				b"6" => "m68k",
+				b"noarch" => "all",
+				b"ppc" => "powerpc",
+				b"x86_64" | b"em64t" => "amd64",
+				b"armv4l" => "arm",
+				b"armv7l" => "armel",
+				b"parisc" => "hppa",
+				b"ppc64le" => "ppc64el",
+
+				// Treat 486, 586, etc, and Pentium, as 386.
+				o if o.eq_ignore_ascii_case(b"pentium") => "i386",
+				&[b'i' | b'I', b'0'..=b'9', b'8', b'6'] => "i386",
+
+				_ => arch,
+			};
+			arch.to_owned()
+		} else {
+			self.read_field("%{ARCH}")?.unwrap_or_default()
+		};
+		Ok(arch)
+	}
+	fn read_file_list(&self, flag: &str) -> Result<Vec<PathBuf>> {
+		let mut files: Vec<_> = Self::rpm()
+			.arg("-qp")
+			.arg(flag)
+			.arg(self.file)
+			.log_and_output(None)?
+			.stdout_str()
+			.lines()
+			.map(|s| PathBuf::from(s.trim()))
+			.collect();
+		if let Some(f) = files.first() {
+			if f.as_os_str() == "(contains no files)" {
+				files.clear();
+			}
+		}
+		Ok(files)
+	}
+}
+
+// rpm maintainer scripts are typically shell scripts,
+// but often lack the leading shebang line.
+// This can confuse dpkg, so add the shebang if it looks like
+// there is no shebang magic already in place.
+//
+// Additionally, it's not uncommon for rpm maintainer scripts to
+// contain bashisms, which can be triggered when they are run on
+// systems where /bin/sh is not bash. To work around this,
+// the shebang line of the scripts is changed to use bash.
+//
+// Also if the rpm is relocatable, the script could refer to
+// RPM_INSTALL_PREFIX, which is to set by rpm at runtime.
+// Deal with this by adding code to the script to set RPM_INSTALL_PREFIX.
+fn sanitize_script(prefixes: &Option<PathBuf>, s: Option<String>) -> String {
+	let prefix_code = prefixes
+		.as_ref()
+		.map(|p| {
+			format!(
+				"\nRPM_INSTALL_PREFIX={}\nexport RPM_INSTALL_PREFIX",
+				p.display()
+			)
+		})
+		.unwrap_or_default();
+
+	if let Some(t) = &s {
+		if let Some(t) = t.strip_prefix("#!") {
+			let t = t.trim_start();
+			if t.starts_with('/') {
+				let mut t = t.replacen("/bin/sh", "#!/bin/bash", 1);
+				if let Some(nl) = t.find('\n') {
+					t.insert_str(nl, &prefix_code);
+				}
+				return t;
+			}
+		}
+	}
+	format!("#!/bin/bash\n{prefix_code}{}", s.unwrap_or_default())
 }

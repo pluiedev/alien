@@ -122,20 +122,12 @@ pub struct PackageInfo {
 	pub changelog_text: String,
 
 	pub use_scripts: bool,
-	pub preinst: Option<String>,
-	pub prerm: Option<String>,
-	pub postinst: Option<String>,
-	pub postrm: Option<String>,
+	pub scripts: HashMap<&'static str, String>,
 	pub owninfo: HashMap<PathBuf, String>,
 	pub modeinfo: HashMap<PathBuf, u32>,
 }
 impl PackageInfo {
-	pub fn scripts(&self) -> Vec<&str> {
-		[&self.postinst, &self.postrm, &self.preinst, &self.prerm]
-			.into_iter()
-			.filter_map(|o| o.as_deref())
-			.collect()
-	}
+	pub const SCRIPTS: &'static [&'static str] = &["preinst", "postinst", "prerm", "postrm"];
 }
 
 #[derive(Debug, Clone, Default)]

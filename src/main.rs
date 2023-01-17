@@ -139,14 +139,19 @@ fn main() -> Result<()> {
 		}
 		let mut pkg = SourcePackage::new(file.clone(), &args)?;
 
-		let scripts = pkg.info().scripts();
+		let scripts = &pkg.info().scripts;
 		if !pkg.info().use_scripts && !scripts.is_empty() {
 			if !args.scripts {
-				eprintln!(
-					"Warning: Skipping conversion of scripts in package {}: {}.",
+				eprint!(
+					"Warning: Skipping conversion of scripts in package {}:",
 					pkg.info().name,
-					scripts.join(" ")
 				);
+				for (k, v) in scripts {
+					if !v.is_empty() {
+						eprint!(" {k}");
+					}
+				}
+				eprintln!(".");
 				eprintln!("Warning: Use the --scripts parameter to include the scripts.");
 			}
 			pkg.info_mut().use_scripts = args.scripts;
