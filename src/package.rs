@@ -56,20 +56,20 @@ pub trait TargetPackageBehavior {
 
 #[enum_dispatch(SourcePackageBehavior)]
 pub enum SourcePackage {
-	LsbSource,
-	RpmSource,
-	DebSource,
+	Lsb(LsbSource),
+	Rpm(RpmSource),
+	Deb(DebSource),
 }
 impl SourcePackage {
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
 		// lsb > rpm > deb > tgz > slp > pkg
 
 		if LsbSource::check_file(&file) {
-			LsbSource::new(file, args).map(Self::LsbSource)
+			LsbSource::new(file, args).map(Self::Lsb)
 		} else if RpmSource::check_file(&file) {
-			RpmSource::new(file, args).map(Self::RpmSource)
+			RpmSource::new(file, args).map(Self::Rpm)
 		} else if DebSource::check_file(&file) {
-			DebSource::new(file, args).map(Self::DebSource)
+			DebSource::new(file, args).map(Self::Deb)
 		} else {
 			bail!("Unknown type of package, {}", file.display());
 		}
@@ -77,9 +77,9 @@ impl SourcePackage {
 }
 #[enum_dispatch(TargetPackageBehavior)]
 pub enum TargetPackage {
-	LsbTarget,
-	RpmTarget,
-	DebTarget,
+	Lsb(LsbTarget),
+	Rpm(RpmTarget),
+	Deb(DebTarget),
 }
 impl TargetPackage {
 	pub fn new(
@@ -89,10 +89,10 @@ impl TargetPackage {
 		args: &Args,
 	) -> Result<Self> {
 		let target = match format {
-			Format::Deb => Self::DebTarget(DebTarget::new(info, unpacked_dir, args)?),
-			Format::Lsb => Self::LsbTarget(LsbTarget::new(info, unpacked_dir)?),
+			Format::Deb => Self::Deb(DebTarget::new(info, unpacked_dir, args)?),
+			Format::Lsb => Self::Lsb(LsbTarget::new(info, unpacked_dir)?),
 			Format::Pkg => todo!(),
-			Format::Rpm => Self::RpmTarget(RpmTarget::new(info, unpacked_dir)?),
+			Format::Rpm => Self::Rpm(RpmTarget::new(info, unpacked_dir)?),
 			Format::Slp => todo!(),
 			Format::Tgz => todo!(),
 		};
