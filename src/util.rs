@@ -1,10 +1,12 @@
 use std::fmt::Debug;
 
+use bpaf::{construct, long, Parser};
+use enumflags2::BitFlags;
 use once_cell::sync::OnceCell;
 use simple_eyre::eyre::{bail, Context, Result};
 use subprocess::{CaptureData, Exec, NullFile, Pipeline};
 
-use crate::PackageInfo;
+use crate::{Format, PackageInfo};
 
 use std::{
 	os::unix::prelude::PermissionsExt,
@@ -12,99 +14,150 @@ use std::{
 };
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(clap::Parser, Debug)]
+#[derive(bpaf::Bpaf, Debug)]
 pub struct Args {
-	/// Generate a Debian deb package (default).
-	#[arg(short = 'd', long)]
-	pub to_deb: bool,
+	#[bpaf(external)]
+	pub formats: BitFlags<Format>,
 
-	// deb-specific settings
-	/// Specify patch file to use instead of automatically looking for patch
-	/// in /var/lib/alien.
-	#[arg(long, requires = "to_deb", value_parser = patch_file_exists)]
-	pub patch: Option<PathBuf>,
-	/// Do not use patches.
-	#[arg(long, requires = "to_deb", conflicts_with = "patch")]
-	pub nopatch: bool,
-	/// Use even old version os patches.
-	#[arg(long, requires = "to_deb")]
-	pub anypatch: bool,
-	/// Like --generate, but do not create .orig directory.
-	#[arg(short, long, requires = "to_deb")]
-	pub single: bool,
-	/// Munge/fix permissions and owners.
-	#[arg(long, requires = "to_deb")]
-	pub fixperms: bool,
-	/// Test generated packages with lintian.
-	#[arg(long, requires = "to_deb")]
-	pub test: bool,
-	// end deb-specific settings
-	/// Generate a Red Hat rpm package.
-	#[arg(short = 'r', long)]
-	pub to_rpm: bool,
-	/// Generate a Stampede slp package.
-	#[arg(long)]
-	pub to_slp: bool,
-	/// Generate a LSB package.
-	#[arg(short = 'l', long)]
-	pub to_lsb: bool,
-	/// Generate a Slackware tgz package.
-	#[arg(short = 't', long)]
-	pub to_tgz: bool,
+	#[bpaf(external, group_help("deb-specific options:"))]
+	pub deb_args: DebArgs,
 
-	// tgx-specific settings
-	/// Specify package description.
-	#[arg(long, requires = "to_tgz")]
-	pub description: Option<String>,
+	#[bpaf(external, group_help("tgz-specific options:"))]
+	pub tgz_args: TgzArgs,
 
-	// /// Specify package version.
-	// #[arg(long, requires = "to_tgz", require_equals = true)]
-	// version: Option<String>,
-
-	// end tgx-specific settings
-	/// Generate a Solaris pkg package.
-	#[arg(short = 'p', long)]
-	pub to_pkg: bool,
 	/// Install generated package.
-	#[arg(short, long, conflicts_with_all = ["generate", "single"])]
+	#[bpaf(short, long, group_help(""))] // have to forcibly break the group for some reason
 	pub install: bool,
-	/// Generate build tree, but do not build package.
-	#[arg(short, long)]
-	pub generate: bool,
-	/// Include scripts in package.
-	#[arg(short = 'c', long)]
-	pub scripts: bool,
-	/// Set architecture of the generated package.
-	#[arg(long)]
-	pub target: Option<String>,
-	/// Display each command alien runs.
-	#[arg(short, long)]
-	pub verbose: bool,
-	/// Be verbose, and also display output of run commands.
-	#[arg(long)]
-	pub veryverbose: bool,
 
-	// TODO: veryverbose
+	/// Generate build tree, but do not build package.
+	#[bpaf(short, long)]
+	pub generate: bool,
+
+	/// Include scripts in package.
+	#[bpaf(short('c'), long)]
+	pub scripts: bool,
+
+	/// Set architecture of the generated package.
+	#[bpaf(argument("arch"))]
+	pub target: Option<String>,
+
+	/// Display each command alien runs.
+	#[bpaf(external)]
+	pub verbosity: Verbosity,
+
 	/// Do not change version of generated package.
-	#[arg(short, long)]
+	#[bpaf(short, long)]
 	pub keep_version: bool,
+
 	/// Increment package version by this number.
-	#[arg(long, default_value_t = 1)]
+	#[bpaf(argument("number"), fallback(1))]
 	pub bump: u32,
 
 	/// Package file or files to convert.
-	#[arg(required = true)]
+	#[bpaf(positional("FILES"), some("You must specify a file to convert."))]
 	pub files: Vec<PathBuf>,
 }
+#[derive(Debug, bpaf::Bpaf)]
+pub struct DebArgs {
+	/// Specify patch file to use instead of automatically looking for patch
+	/// in /var/lib/alien.
+	#[bpaf(
+		argument("patch"),
+		guard(patch_file_exists, "Specified patch file cannot be found")
+	)]
+	pub patch: Option<PathBuf>,
+	/// Do not use patches.
+	pub nopatch: bool,
+	/// Use even old version os patches.
+	pub anypatch: bool,
+	/// Like --generate, but do not create .orig directory.
+	#[bpaf(short, long)]
+	pub single: bool,
+	/// Munge/fix permissions and owners.
+	pub fixperms: bool,
+	/// Test generated packages with lintian.
+	pub test: bool,
+}
 
-fn patch_file_exists(s: &str) -> Result<PathBuf, String> {
-	let path = PathBuf::from(s);
+#[derive(Debug, bpaf::Bpaf)]
+pub struct TgzArgs {
+	/// Specify package description.
+	#[bpaf(argument("desc"))]
+	pub description: Option<String>,
 
-	if path.exists() {
-		Ok(path)
-	} else {
-		Err(format!("Specified patch file, \"{s}\" cannot be found."))
-	}
+	#[bpaf(argument("version"))]
+	/// Specify package version.
+	pub version: Option<String>,
+}
+
+fn formats() -> impl Parser<BitFlags<Format>> {
+	let to_deb = long("to-deb")
+		.short('d')
+		.help("Generate a Debian deb package (default).")
+		.switch();
+	let to_rpm = long("to-rpm")
+		.short('r')
+		.help("Generate a Red Hat rpm package.")
+		.switch();
+	let to_slp = long("to-slp")
+		.help("Generate a Stampede slp package.")
+		.switch();
+	let to_lsb = long("to-lsb")
+		.short('l')
+		.help("Generate a LSB package.")
+		.switch();
+	let to_tgz = long("to-tgz")
+		.short('t')
+		.help("Generate a Slackware tgz package.")
+		.switch();
+	let to_pkg = long("to-pkg")
+		.short('p')
+		.help("Generate a Solaris pkg package.")
+		.switch();
+
+	construct!(to_deb, to_rpm, to_slp, to_lsb, to_tgz, to_pkg,).map(|(d, r, s, l, t, p)| {
+		let mut formats = BitFlags::empty();
+
+		#[rustfmt::skip]
+		let _ = {
+			if d { formats |= Format::Deb; }
+			if r { formats |= Format::Rpm; }
+			if s { formats |= Format::Slp; }
+			if l { formats |= Format::Lsb; }
+			if t { formats |= Format::Tgz; }
+			if p { formats |= Format::Pkg; }
+		};
+
+		if formats.is_empty() {
+			// Default to deb
+			formats |= Format::Deb;
+		}
+		formats
+	})
+}
+
+fn patch_file_exists(s: &Option<PathBuf>) -> bool {
+	s.as_ref().map_or(true, |s| s.exists())
+}
+
+fn verbosity() -> impl Parser<Verbosity> {
+	let verbose = long("verbose")
+		.short('v')
+		.help("Display each command alien runs.")
+		.switch();
+	let very_verbose = long("veryverbose")
+		.help("Be verbose, and also display output of run commands.")
+		.switch();
+
+	construct!(verbose, very_verbose).map(|(v, vv)| {
+		if vv {
+			Verbosity::VeryVerbose
+		} else if v {
+			Verbosity::Verbose
+		} else {
+			Verbosity::Normal
+		}
+	})
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,16 +167,8 @@ pub enum Verbosity {
 	VeryVerbose,
 }
 impl Verbosity {
-	pub fn set(args: &Args) {
-		VERBOSITY
-			.set(if args.veryverbose {
-				Verbosity::VeryVerbose
-			} else if args.verbose {
-				Verbosity::Verbose
-			} else {
-				Verbosity::Normal
-			})
-			.unwrap();
+	pub fn set(self) {
+		VERBOSITY.set(self).unwrap();
 	}
 	pub fn get() -> Verbosity {
 		*VERBOSITY.get().unwrap()

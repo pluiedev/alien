@@ -4,7 +4,7 @@
 	clippy::redundant_closure_for_method_calls,
 	clippy::module_name_repetitions,
 	clippy::missing_errors_doc,
-	clippy::missing_panics_doc,
+	clippy::missing_panics_doc
 )]
 
 use std::{
@@ -14,7 +14,6 @@ use std::{
 };
 
 use enum_dispatch::enum_dispatch;
-use enumflags2::BitFlags;
 use simple_eyre::eyre::{bail, Result};
 use util::Args;
 
@@ -309,36 +308,6 @@ pub enum Format {
 	Slp,
 	/// The `.tgz` format, used by Slackware.
 	Tgz,
-}
-impl Format {
-	#[must_use]
-	pub fn new(args: &Args) -> BitFlags<Self> {
-		let mut set = BitFlags::empty();
-		if args.to_deb {
-			set |= Self::Deb;
-		}
-		if args.to_lsb {
-			set |= Self::Lsb;
-		}
-		if args.to_pkg {
-			set |= Self::Pkg;
-		}
-		if args.to_rpm {
-			set |= Self::Rpm;
-		}
-		if args.to_slp {
-			set |= Self::Slp;
-		}
-		if args.to_tgz {
-			set |= Self::Tgz;
-		}
-
-		if set.is_empty() {
-			// Default to deb
-			set |= Self::Deb;
-		}
-		set
-	}
 }
 impl Display for Format {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

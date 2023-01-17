@@ -2,32 +2,42 @@
 #![warn(rust_2018_idioms, clippy::pedantic)]
 
 use alien::{
-	util::{Args, Verbosity},
+	util::{args, Verbosity},
 	AnySourcePackage, AnyTargetPackage, Format, SourcePackage, TargetPackage,
 };
-use clap::Parser;
 
+use bpaf::Parser;
 use simple_eyre::{eyre::bail, Result};
 
 fn main() -> Result<()> {
 	simple_eyre::install()?;
 
-	let args = Args::parse();
+	let args = args()
+		.guard(
+			|a| !(a.install && (a.generate || a.deb_args.single)),
+			"You cannot use --generate or --single with --install.",
+		)
+		.guard(
+			|a| !(a.formats.exactly_one().is_none() && (a.generate || a.deb_args.single)),
+			"--generate and --single may only be used when converting to a single format.",
+		)
+		.guard(
+			|a| !(a.deb_args.nopatch && a.deb_args.patch.is_some()),
+			"The options --nopatch and --patchfile cannot be used together.",
+		)
+		.to_options()
+		.run();
 
-	// TODO: find a way to do this natively in `clap`
-	let formats = Format::new(&args);
+	Verbosity::set(args.verbosity);
 
-	Verbosity::set(&args);
-
-	if (args.generate || args.install) && formats.exactly_one().is_none() {
-		bail!("--generate and --single may only be used when converting to a single format.");
+	// Check alien's working environment.
+	if std::fs::write("test", "test").is_err() {
+		bail!("Cannot write to current directory. Try moving to /tmp and re-running alien.");
 	}
-
-	// TODO: check targets, assume debian, and if generate and single are specified, disallow multiple targets.
 
 	// Check if we're root.
 	if !nix::unistd::geteuid().is_root() {
-		if formats.contains(Format::Deb) && !args.generate && !args.single {
+		if args.formats.contains(Format::Deb) && !args.generate && !args.deb_args.single {
 			bail!("Must run as root to convert to deb format (or you may use fakeroot).");
 		}
 		eprintln!("Warning: alien is not running as root!");
@@ -65,14 +75,14 @@ fn main() -> Result<()> {
 		let unpacked = pkg.unpack()?;
 		let info = pkg.into_info();
 
-		for format in formats {
+		for format in args.formats {
 			// Convert package
 			if args.generate || info.original_format != format {
 				let mut pkg = AnyTargetPackage::new(format, info.clone(), unpacked.clone(), &args)?;
 
 				if args.generate {
 					let tree = unpacked.display();
-					if format == Format::Deb && !args.single {
+					if format == Format::Deb && !args.deb_args.single {
 						println!("Directories {tree} and {tree}.orig prepared.");
 					} else {
 						println!("Directory {tree} prepared.");
@@ -84,7 +94,7 @@ fn main() -> Result<()> {
 				}
 
 				let new_file = pkg.build()?;
-				if args.test {
+				if args.deb_args.test {
 					let results = pkg.test(&new_file)?;
 					if !results.is_empty() {
 						println!("Test results:");

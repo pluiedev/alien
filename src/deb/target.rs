@@ -31,7 +31,7 @@ impl DebTarget {
 		Self::sanitize_info(&mut info)?;
 
 		// Make .orig.tar.gz directory?
-		if !args.single && !args.generate {
+		if !args.deb_args.single && !args.generate {
 			let option = CopyOptions {
 				overwrite: true,
 				..Default::default()
@@ -39,12 +39,12 @@ impl DebTarget {
 			fs_extra::dir::copy(&unpacked_dir, unpacked_dir.with_extension("orig"), &option)?;
 		}
 
-		let patch_file = if args.nopatch {
+		let patch_file = if args.deb_args.nopatch {
 			None
 		} else {
-			match &args.patch {
+			match &args.deb_args.patch {
 				Some(o) => Some(o.clone()),
-				None => get_patch(&info, args.anypatch, PATCH_DIRS),
+				None => get_patch(&info, args.deb_args.anypatch, PATCH_DIRS),
 			}
 		};
 
@@ -64,7 +64,7 @@ impl DebTarget {
 		writer.write_copyright()?;
 		writer.write_conffiles()?;
 		writer.write_compat(7)?; // Use debhelper v7
-		writer.write_rules(args.fixperms)?;
+		writer.write_rules(args.deb_args.fixperms)?;
 		writer.write_scripts()?;
 
 		let DebWriter { info, dir, .. } = writer;
