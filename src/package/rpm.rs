@@ -17,28 +17,24 @@ use subprocess::{Exec, NullFile, Redirection};
 
 use crate::{
 	package::Format,
-	util::{ExecExt, Verbosity},
+	util::{make_unpack_work_dir, chmod, ExecExt, Verbosity},
 	Args,
 };
 
-use super::{
-	common::{self, chmod},
-	PackageBehavior, PackageInfo,
-};
+use super::{PackageInfo, SourcePackageBehavior, TargetPackageBehavior};
 
-pub struct Rpm {
+pub struct RpmSource {
 	info: PackageInfo,
-	rpm_file: PathBuf,
 	prefixes: Option<PathBuf>,
 }
-impl Rpm {
+impl RpmSource {
 	pub fn check_file(file: &Path) -> bool {
 		match file.extension() {
 			Some(o) => o.eq_ignore_ascii_case("rpm"),
 			None => false,
 		}
 	}
-	pub fn new(rpm_file: PathBuf, args: &Args) -> Result<Self> {
+	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
 		// I'm lazy.
 		fn rpm() -> Exec {
 			Exec::cmd("rpm").env("LANG", "C")
@@ -48,7 +44,7 @@ impl Rpm {
 				.arg("-qp")
 				.arg("--queryformat")
 				.arg(name)
-				.arg(&rpm_file)
+				.arg(&file)
 				.log_and_output(None)?
 				.stdout_str();
 
@@ -102,7 +98,7 @@ impl Rpm {
 
 		let mut conffiles: Vec<_> = rpm()
 			.arg("-qcp")
-			.arg(&rpm_file)
+			.arg(&file)
 			.log_and_output(None)?
 			.stdout_str()
 			.lines()
@@ -116,7 +112,7 @@ impl Rpm {
 
 		let mut file_list: Vec<_> = rpm()
 			.arg("-qlp")
-			.arg(&rpm_file)
+			.arg(&file)
 			.log_and_output(None)?
 			.stdout_str()
 			.lines()
@@ -130,7 +126,7 @@ impl Rpm {
 
 		let binary_info = rpm()
 			.arg("-qip")
-			.arg(&rpm_file)
+			.arg(&file)
 			.log_and_output(None)?
 			.stdout_str();
 
@@ -221,125 +217,30 @@ impl Rpm {
 			file_list,
 			binary_info,
 
+			file,
 			distribution: "Red Hat".into(),
 			original_format: Format::Rpm,
 			..Default::default()
 		};
 
-		Ok(Self {
-			info,
-			rpm_file,
-			prefixes,
-		})
-	}
-	pub(crate) fn build_with(&mut self, cmd: &str, unpacked_dir: &Path) -> Result<PathBuf> {
-		let rpmdir = Exec::cmd("rpm")
-			.arg("--showrc")
-			.log_and_output(None)?
-			.stdout_str()
-			.lines()
-			.find_map(|l| {
-				if let Some(l) = l.strip_prefix("rpmdir") {
-					let path = l.trim_start().trim_start_matches(':').trim_start();
-					Some(PathBuf::from(path))
-				} else {
-					None
-				}
-			});
-
-		let PackageInfo {
-			name,
-			version,
-			release,
-			arch,
-			..
-		} = &self.info;
-
-		let rpm = format!("{name}-{version}-{release}.{arch}.rpm");
-
-		let (rpm, arch_flag) = if let Some(rpmdir) = rpmdir {
-			// Old versions of rpm toss it off in te middle of nowhere.
-			let mut r = rpmdir.join(arch);
-			r.push(&rpm);
-			(r, "--buildarch")
-		} else {
-			// Presumably we're dealing with rpm 3.0 or above, which doesn't
-			// output rpmdir in any format I'd care to try to parse.
-			// Instead, rpm is now of a late enough version to notice the
-			// %define's in the spec file, which will make the file end up
-			// in the directory we started in.
-			// Anyway, let's assume this is version 3 or above.
-
-			// This is the new command line argument to set the arch rpms.
-			// It appeared in rpm version 3.
-			(PathBuf::from(rpm), "--target")
-		};
-
-		let mut build_root = std::env::current_dir()?;
-		build_root.push(unpacked_dir);
-
-		let mut cmd = Exec::cmd(cmd)
-			.cwd(unpacked_dir)
-			.stderr(Redirection::Merge)
-			.arg("--buildroot")
-			.arg(build_root)
-			.arg("-bb")
-			.arg(arch_flag)
-			.arg(arch);
-
-		if let Ok(opt) = std::env::var("RPMBUILDOPT") {
-			let opt: Vec<_> = opt.split(' ').collect();
-			cmd = cmd.args(&opt);
-		}
-
-		let spec = format!("{name}-{version}-{release}.spec");
-
-		let cmdline = cmd.to_cmdline_lossy();
-		let out = cmd.arg(&spec).log_and_output_without_checking(None)?;
-
-		if !out.success() {
-			bail!(
-				"Package build failed. Here's the log of the command ({cmdline}):\n{}",
-				out.stdout_str()
-			);
-		}
-
-		Ok(rpm)
+		Ok(Self { info, prefixes })
 	}
 }
-
-#[test]
-fn hmmm() {
-	let a = std::env::var("LS_ARGS").unwrap();
-	let a = a.split(" ").collect::<Vec<_>>();
-	dbg!(Exec::cmd("ls").args(&a).capture().unwrap().stdout_str());
-}
-
-impl PackageBehavior for Rpm {
+impl SourcePackageBehavior for RpmSource {
 	fn info(&self) -> &PackageInfo {
 		&self.info
 	}
 	fn info_mut(&mut self) -> &mut PackageInfo {
 		&mut self.info
 	}
-
-	fn install(&mut self, file_name: &Path) -> Result<()> {
-		let cmd = Exec::cmd("rpm").arg("-ivh");
-		let cmd = if let Some(opt) = std::env::var_os("RPMINSTALLOPT") {
-			let mut path = PathBuf::from(opt);
-			path.push(file_name);
-			cmd.arg(path)
-		} else {
-			cmd.arg(file_name)
-		};
-		cmd.log_and_output(Verbosity::VeryVerbose)
-			.wrap_err("Unable to install")?;
-		Ok(())
+	fn into_info(self) -> PackageInfo {
+		self.info
 	}
-	fn unpack(&mut self) -> Result<PathBuf> {
-		let work_dir = common::make_unpack_work_dir(&self.info)?;
 
-		let rpm2cpio = || Exec::cmd("rpm2cpio").arg(&self.rpm_file);
+	fn unpack(&mut self) -> Result<PathBuf> {
+		let work_dir = make_unpack_work_dir(&self.info)?;
+
+		let rpm2cpio = || Exec::cmd("rpm2cpio").arg(&self.info.file);
 
 		// Check if we need to use lzma to uncompress the cpio archive
 		let cmd = rpm2cpio()
@@ -366,7 +267,7 @@ impl PackageBehavior for Rpm {
 
 		(rpm2cpio() | decomp() | cpio)
 			.log_and_spawn(None)
-			.wrap_err_with(|| format!("Unpacking of {} failed", self.rpm_file.display()))?;
+			.wrap_err_with(|| format!("Unpacking of {} failed", self.info.file.display()))?;
 
 		// `cpio` does not necessarily store all parent directories in an archive,
 		// and so some directories, if it has to make them and has no permission info,
@@ -376,7 +277,7 @@ impl PackageBehavior for Rpm {
 		let cpio = Exec::cmd("cpio").args(&["-it", "--quiet"]);
 		let seen_files: HashSet<_> = (rpm2cpio() | decomp() | cpio)
 			.log_and_output(None)
-			.wrap_err_with(|| format!("File list of {} failed", self.rpm_file.display()))?
+			.wrap_err_with(|| format!("File list of {} failed", self.info.file.display()))?
 			.stdout_str()
 			.lines()
 			.map(PathBuf::from)
@@ -459,7 +360,7 @@ impl PackageBehavior for Rpm {
 				r#"'[%{FILEMODES} %{FILEUSERNAME} %{FILEGROUPNAME} %{FILENAMES}\n]'"#,
 				"-qp",
 			])
-			.arg(&self.rpm_file)
+			.arg(&self.info.file)
 			.log_and_output(None)?
 			.stdout_str();
 
@@ -518,10 +419,18 @@ impl PackageBehavior for Rpm {
 
 		Ok(work_dir)
 	}
+}
 
-	fn prepare(&mut self, unpacked_dir: &Path) -> Result<()> {
+pub struct RpmTarget {
+	pub(crate) info: PackageInfo,
+	unpacked_dir: PathBuf,
+}
+impl RpmTarget {
+	pub fn new(mut info: PackageInfo, unpacked_dir: PathBuf) -> Result<Self> {
+		Self::sanitize_info(&mut info)?;
+
 		let mut file_list = String::new();
-		for filename in &self.info.file_list {
+		for filename in &info.file_list {
 			// DIFFERENCE WITH THE PERL VERSION:
 			// `snailquote` doesn't escape the same characters as Perl, but that difference
 			// is negligible at best - feel free to implement Perl-style escaping if you want to.
@@ -533,8 +442,7 @@ impl PackageBehavior for Rpm {
 
 			if unquoted.ends_with('/') {
 				file_list.push_str("%dir ");
-			} else if self
-				.info
+			} else if info
 				.conffiles
 				.iter()
 				.any(|f| f.as_os_str() == unquoted.as_str())
@@ -563,7 +471,7 @@ impl PackageBehavior for Rpm {
 			description,
 			original_format,
 			..
-		} = &self.info;
+		} = &info;
 
 		let mut spec = File::create(format!(
 			"{}/{name}-{version}-{release}.spec",
@@ -571,7 +479,7 @@ impl PackageBehavior for Rpm {
 		))?;
 
 		let mut build_root = std::env::current_dir()?;
-		build_root.push(unpacked_dir);
+		build_root.push(&unpacked_dir);
 
 		#[rustfmt::skip]
 		write!(
@@ -634,11 +542,86 @@ r#"%description
 			alien_version = env!("CARGO_PKG_VERSION")
 		)?;
 
-		Ok(())
+		Ok(Self { info, unpacked_dir })
 	}
 
-	fn sanitize_info(&mut self) -> Result<()> {
-		self.info.version = self.info.version.replace('-', "_");
+	pub(crate) fn build_with(&mut self, cmd: &Path) -> Result<PathBuf> {
+		let rpmdir = Exec::cmd("rpm")
+			.arg("--showrc")
+			.log_and_output(None)?
+			.stdout_str()
+			.lines()
+			.find_map(|l| {
+				if let Some(l) = l.strip_prefix("rpmdir") {
+					let path = l.trim_start().trim_start_matches(':').trim_start();
+					Some(PathBuf::from(path))
+				} else {
+					None
+				}
+			});
+
+		let PackageInfo {
+			name,
+			version,
+			release,
+			arch,
+			..
+		} = &self.info;
+
+		let rpm = format!("{name}-{version}-{release}.{arch}.rpm");
+
+		let (rpm, arch_flag) = if let Some(rpmdir) = rpmdir {
+			// Old versions of rpm toss it off in te middle of nowhere.
+			let mut r = rpmdir.join(arch);
+			r.push(&rpm);
+			(r, "--buildarch")
+		} else {
+			// Presumably we're dealing with rpm 3.0 or above, which doesn't
+			// output rpmdir in any format I'd care to try to parse.
+			// Instead, rpm is now of a late enough version to notice the
+			// %define's in the spec file, which will make the file end up
+			// in the directory we started in.
+			// Anyway, let's assume this is version 3 or above.
+
+			// This is the new command line argument to set the arch rpms.
+			// It appeared in rpm version 3.
+			(PathBuf::from(rpm), "--target")
+		};
+
+		let mut build_root = std::env::current_dir()?;
+		build_root.push(&self.unpacked_dir);
+
+		let mut cmd = Exec::cmd(cmd)
+			.cwd(&self.unpacked_dir)
+			.stderr(Redirection::Merge)
+			.arg("--buildroot")
+			.arg(build_root)
+			.arg("-bb")
+			.arg(arch_flag)
+			.arg(arch);
+
+		if let Ok(opt) = std::env::var("RPMBUILDOPT") {
+			let opt: Vec<_> = opt.split(' ').collect();
+			cmd = cmd.args(&opt);
+		}
+
+		let spec = format!("{name}-{version}-{release}.spec");
+
+		let cmdline = cmd.to_cmdline_lossy();
+		let out = cmd.arg(&spec).log_and_output_without_checking(None)?;
+
+		if !out.success() {
+			bail!(
+				"Package build failed. Here's the log of the command ({cmdline}):\n{}",
+				out.stdout_str()
+			);
+		}
+
+		Ok(rpm)
+	}
+
+	fn sanitize_info(info: &mut PackageInfo) -> Result<()> {
+		info.version = info.version.replace('-', "_");
 
 		// When retrieving scripts for building, we have to do some truly sick mangling.
 		// Since debian/slackware scripts can be anything -- perl programs or binary files --
@@ -675,12 +658,12 @@ rmdir /tmp/alien.$$
 			*script = Some(patched);
 		}
 
-		script_helper(&mut self.info.preinst);
-		script_helper(&mut self.info.postinst);
-		script_helper(&mut self.info.prerm);
-		script_helper(&mut self.info.postrm);
+		script_helper(&mut info.preinst);
+		script_helper(&mut info.postinst);
+		script_helper(&mut info.prerm);
+		script_helper(&mut info.postrm);
 
-		let arch = match self.info.arch.as_str() {
+		let arch = match info.arch.as_str() {
 			"amd64" => Some("x86_64"),
 			"powerpc" => Some("ppc"), // XXX is this the canonical name for powerpc on rpm systems?
 			"hppa" => Some("parisc"),
@@ -689,13 +672,33 @@ rmdir /tmp/alien.$$
 			_ => None,
 		};
 		if let Some(arch) = arch {
-			self.info.arch = arch.to_owned();
+			info.arch = arch.to_owned();
 		}
 
 		Ok(())
 	}
+}
 
-	fn build(&mut self, unpacked_dir: &Path) -> Result<PathBuf> {
-		self.build_with("rpmbuild", unpacked_dir)
+impl TargetPackageBehavior for RpmTarget {
+	fn clear_unpacked_dir(&mut self) {
+		self.unpacked_dir.clear()
+	}
+
+	fn clean_tree(&mut self) {}
+	fn build(&mut self) -> Result<PathBuf> {
+		self.build_with(Path::new("rpmbuild"))
+	}
+	fn install(&mut self, file_name: &Path) -> Result<()> {
+		let cmd = Exec::cmd("rpm").arg("-ivh");
+		let cmd = if let Some(opt) = std::env::var_os("RPMINSTALLOPT") {
+			let mut path = PathBuf::from(opt);
+			path.push(file_name);
+			cmd.arg(path)
+		} else {
+			cmd.arg(file_name)
+		};
+		cmd.log_and_output(Verbosity::VeryVerbose)
+			.wrap_err("Unable to install")?;
+		Ok(())
 	}
 }

@@ -8,30 +8,25 @@ use enum_dispatch::enum_dispatch;
 use enumflags2::BitFlags;
 use simple_eyre::eyre::{bail, Result};
 
-use deb::Deb;
-
 use crate::Args;
 
-use self::rpm::Rpm;
+use self::{
+	deb::{DebSource, DebTarget},
+	lsb::{LsbSource, LsbTarget},
+	rpm::{RpmSource, RpmTarget},
+};
 
-pub(crate) mod common;
 pub mod deb;
+pub mod lsb;
 pub mod rpm;
 
 #[enum_dispatch]
-pub trait PackageBehavior {
+pub trait SourcePackageBehavior {
 	fn info(&self) -> &PackageInfo;
 	fn info_mut(&mut self) -> &mut PackageInfo;
+	fn into_info(self) -> PackageInfo;
 
-	fn install(&mut self, file_name: &Path) -> Result<()>;
-	fn test(&mut self, _file_name: &Path) -> Result<Vec<String>> {
-		Ok(vec![])
-	}
 	fn unpack(&mut self) -> Result<PathBuf>;
-	fn prepare(&mut self, unpacked_dir: &Path) -> Result<()>;
-	fn sanitize_info(&mut self) -> Result<()>;
-	fn build(&mut self, unpacked_dir: &Path) -> Result<PathBuf>;
-	fn revert(&mut self) {}
 
 	fn increment_release(&mut self, bump: u32) {
 		let release = &mut self.info_mut().release;
@@ -46,28 +41,69 @@ pub trait PackageBehavior {
 		};
 	}
 }
+#[enum_dispatch]
+pub trait TargetPackageBehavior {
+	fn clear_unpacked_dir(&mut self);
 
-#[enum_dispatch(PackageBehavior)]
-pub enum Package {
-	Rpm,
-	Deb,
+	fn clean_tree(&mut self);
+	fn build(&mut self) -> Result<PathBuf>;
+	fn test(&mut self, _file_name: &Path) -> Result<Vec<String>> {
+		Ok(vec![])
+	}
+	fn install(&mut self, file_name: &Path) -> Result<()>;
+	fn revert(&mut self) {}
 }
-impl Package {
+
+#[enum_dispatch(SourcePackageBehavior)]
+pub enum SourcePackage {
+	LsbSource,
+	RpmSource,
+	DebSource,
+}
+impl SourcePackage {
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
 		// lsb > rpm > deb > tgz > slp > pkg
 
-		if Rpm::check_file(&file) {
-			Rpm::new(file, args).map(Package::Rpm)
-		} else if Deb::check_file(&file) {
-			Deb::new(file, args).map(Package::Deb)
+		if LsbSource::check_file(&file) {
+			LsbSource::new(file, args).map(Self::LsbSource)
+		} else if RpmSource::check_file(&file) {
+			RpmSource::new(file, args).map(Self::RpmSource)
+		} else if DebSource::check_file(&file) {
+			DebSource::new(file, args).map(Self::DebSource)
 		} else {
 			bail!("Unknown type of package, {}", file.display());
 		}
 	}
 }
+#[enum_dispatch(TargetPackageBehavior)]
+pub enum TargetPackage {
+	LsbTarget,
+	RpmTarget,
+	DebTarget,
+}
+impl TargetPackage {
+	pub fn new(
+		format: Format,
+		info: PackageInfo,
+		unpacked_dir: PathBuf,
+		args: &Args,
+	) -> Result<Self> {
+		let target = match format {
+			Format::Deb => Self::DebTarget(DebTarget::new(info, unpacked_dir, args)?),
+			Format::Lsb => Self::LsbTarget(LsbTarget::new(info, unpacked_dir)?),
+			Format::Pkg => todo!(),
+			Format::Rpm => Self::RpmTarget(RpmTarget::new(info, unpacked_dir)?),
+			Format::Slp => todo!(),
+			Format::Tgz => todo!(),
+		};
+		Ok(target)
+	}
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct PackageInfo {
+	pub file: PathBuf,
+
 	pub name: String,
 	pub version: String,
 	pub release: String,

@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use fs_extra::dir::CopyOptions;
-use package::{Format, Package, PackageBehavior};
+use package::{Format, SourcePackage, SourcePackageBehavior, TargetPackage, TargetPackageBehavior};
 use simple_eyre::{eyre::bail, Result};
 use util::Verbosity;
 
@@ -133,7 +132,7 @@ fn main() -> Result<()> {
 		if !file.try_exists()? {
 			bail!("File \"{}\" not found.", file.display());
 		}
-		let mut pkg = Package::new(file.clone(), &args)?;
+		let mut pkg = SourcePackage::new(file.clone(), &args)?;
 
 		let scripts = pkg.info().scripts();
 		if !pkg.info().use_scripts && !scripts.is_empty() {
@@ -152,30 +151,13 @@ fn main() -> Result<()> {
 			pkg.increment_release(args.bump);
 		}
 
+		let unpacked = pkg.unpack()?;
+		let info = pkg.into_info();
+
 		for format in formats {
-			if args.generate || pkg.info().original_format != format {
-				// Only unpack once.
-				// it's not possible to unpack multiple times with our architecture
-				// let tree = match &pkg.info().unpacked_tree {
-				//     Some(u) => {
-				//         pkg.clean_tree();
-				//         u
-				//     }
-				//     None => pkg.unpack()?,
-				// }.to_owned();
-				let unpacked = pkg.unpack()?;
-
-				// Make .orig.tar.gz directory?
-				if format == Format::Deb && !args.single && !args.generate {
-					let option = CopyOptions {
-						overwrite: true,
-						..Default::default()
-					};
-					fs_extra::dir::copy(&unpacked, unpacked.with_extension("orig"), &option)?;
-				}
-
-				pkg.sanitize_info()?;
-				pkg.prepare(&unpacked)?;
+			// Convert package
+			if args.generate || info.original_format != format {
+				let mut pkg = TargetPackage::new(format, info.clone(), unpacked.clone(), &args)?;
 
 				if args.generate {
 					let tree = unpacked.display();
@@ -186,11 +168,11 @@ fn main() -> Result<()> {
 					}
 					// Make sure `package` does not wipe out the
 					// directory when it is destroyed.
-					// pkg.info_mut().unpacked_tree = None;
+					pkg.clear_unpacked_dir();
 					continue;
 				}
 
-				let new_file = pkg.build(&unpacked)?;
+				let new_file = pkg.build()?;
 				if args.test {
 					let results = pkg.test(&new_file)?;
 					if !results.is_empty() {
@@ -201,19 +183,21 @@ fn main() -> Result<()> {
 					}
 				}
 				if args.install {
-					pkg.install(&new_file)?;
+					// pkg.install(&new_file)?;
 					std::fs::remove_file(&new_file)?;
 				} else {
 					// Tell them where the package ended up.
 					println!("{} generated", new_file.display());
 				}
+
+				pkg.clean_tree();
 			} else if args.install {
 				// Don't convert the package, but do install it.
-				pkg.install(file)?;
+				// pkg.install(file)?;
 				// Note I don't remove it. I figure that might annoy
 				// people, since it was an input file.
 			}
-			pkg.revert();
+			// pkg.revert();
 		}
 	}
 

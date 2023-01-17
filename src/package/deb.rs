@@ -18,31 +18,29 @@ use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 use xz::read::XzDecoder;
 
 use crate::{
-	util::{ExecExt, Verbosity},
+	util::{ExecExt, Verbosity, make_unpack_work_dir, fetch_email_address, chmod},
 	Args,
 };
 
-use super::{common, Format, PackageBehavior, PackageInfo};
+use super::{Format, PackageInfo, SourcePackageBehavior, TargetPackageBehavior};
 
 const PATCH_DIRS: &[&str] = &["/var/lib/alien", "/usr/share/alien/patches"];
 
-pub struct Deb {
+pub struct DebSource {
 	info: PackageInfo,
-	deb_file: PathBuf,
 	data_tar: tar::Archive<Cursor<Vec<u8>>>,
-	fix_perms: bool,
-	patch_file: Option<PathBuf>,
-	dir_map: HashMap<PathBuf, PathBuf>,
 }
-impl Deb {
+impl DebSource {
 	pub fn check_file(file: &Path) -> bool {
 		match file.extension() {
 			Some(o) => o.eq_ignore_ascii_case("deb"),
 			None => false,
 		}
 	}
-	pub fn new(deb_file: PathBuf, args: &Args) -> Result<Self> {
+
+	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
 		let mut info = PackageInfo {
+			file,
 			distribution: "Debian".into(),
 			original_format: Format::Deb,
 			..Default::default()
@@ -52,7 +50,7 @@ impl Deb {
 
 		let mut control_files = fetch_control_files(
 			dpkg_deb.as_deref(),
-			&deb_file,
+			&info.file,
 			&[
 				"control",
 				"conffiles",
@@ -84,7 +82,7 @@ impl Deb {
 
 				match field.as_str() {
 					"package" => info.name = value,
-					"version" => info.set_version_and_release(&value)?,
+					"version" => set_version_and_release(&mut info, &value)?,
 					"architecture" => info.arch = value,
 					"maintainer" => info.maintainer = value,
 					"section" => info.group = value,
@@ -106,7 +104,7 @@ impl Deb {
 			info.conffiles.extend(conffiles.lines().map(PathBuf::from));
 		};
 
-		let mut data_tar = fetch_data_tar(dpkg_deb.as_deref(), &deb_file)?;
+		let mut data_tar = fetch_data_tar(dpkg_deb.as_deref(), &info.file)?;
 
 		// In the tar file, the files are all prefixed with "./", but we want them
 		// to be just "/". So, we gotta do this!
@@ -131,6 +129,43 @@ impl Deb {
 			info.arch = arch.clone();
 		}
 
+		Ok(Self { info, data_tar })
+	}
+}
+impl SourcePackageBehavior for DebSource {
+	fn info(&self) -> &PackageInfo {
+		&self.info
+	}
+	fn info_mut(&mut self) -> &mut PackageInfo {
+		&mut self.info
+	}
+	fn into_info(self) -> PackageInfo {
+		self.info
+	}
+	fn unpack(&mut self) -> Result<PathBuf> {
+		let work_dir = make_unpack_work_dir(&self.info)?;
+		self.data_tar.unpack(&work_dir)?;
+		Ok(work_dir)
+	}
+}
+
+pub struct DebTarget {
+	info: PackageInfo,
+	unpacked_dir: PathBuf,
+}
+impl DebTarget {
+	pub fn new(mut info: PackageInfo, unpacked_dir: PathBuf, args: &Args) -> Result<Self> {
+		Self::sanitize_info(&mut info)?;
+
+		// Make .orig.tar.gz directory?
+		if !args.single && !args.generate {
+			let option = CopyOptions {
+				overwrite: true,
+				..Default::default()
+			};
+			fs_extra::dir::copy(&unpacked_dir, unpacked_dir.with_extension("orig"), &option)?;
+		}
+
 		let patch_file = if args.nopatch {
 			None
 		} else {
@@ -140,172 +175,20 @@ impl Deb {
 			}
 		};
 
-		Ok(Self {
-			info,
-			deb_file,
-			data_tar,
-			fix_perms: args.fixperms,
-			patch_file,
-			dir_map: HashMap::new(),
-		})
-	}
-	fn save_script(&self, debian_dir: &Path, script: &str, mut data: String) -> Result<()> {
-		if script == "postinst" {
-			self.patch_post_inst(&mut data);
-		}
-		if data.chars().any(|c| !c.is_whitespace()) {
-			std::fs::write(debian_dir.join(script), data)?;
-		}
-		Ok(())
-	}
-	fn patch_post_inst(&self, old: &mut String) {
-		let PackageInfo {
-			owninfo, modeinfo, ..
-		} = &self.info;
+		let mut dir_map = HashMap::new();
 
-		if owninfo.is_empty() {
-			return;
-		}
-
-		// If there is no postinst, let's make one up..
-		if old.is_empty() {
-			old.push_str("#!/bin/sh\n");
-		}
-
-		let index = old.find('\n').unwrap_or(old.len());
-		let first_line = &old[..index];
-
-		if let Some(s) = first_line.strip_prefix("#!") {
-			let s = s.trim_start();
-			if let "/bin/bash" | "/bin/sh" = s {
-				eprintln!("warning: unable to add ownership fixup code to postinst as the postinst is not a shell script!");
-				return;
-			}
-		}
-
-		let mut injection = String::from("\n# alien added permissions fixup code");
-
-		for (file, owi) in owninfo {
-			// no single quotes in single quotes...
-			let escaped_file = file.to_string_lossy().replace('\'', r#"'"'"'"#);
-			write!(injection, "\nchown '{owi}' '{escaped_file}'").unwrap();
-
-			if let Some(mdi) = modeinfo.get(file) {
-				write!(injection, "\nchmod '{mdi}' '{escaped_file}'").unwrap();
-			}
-		}
-		old.insert_str(index, &injection);
-	}
-}
-impl PackageBehavior for Deb {
-	fn info(&self) -> &PackageInfo {
-		&self.info
-	}
-	fn info_mut(&mut self) -> &mut PackageInfo {
-		&mut self.info
-	}
-	fn install(&mut self, file_name: &Path) -> Result<()> {
-		Exec::cmd("dpkg")
-			.args(&["--no-force-overwrite", "-i"])
-			.arg(file_name)
-			.log_and_spawn(Verbosity::VeryVerbose)
-			.wrap_err("Unable to install")?;
-		Ok(())
-	}
-
-	fn test(&mut self, file_name: &Path) -> Result<Vec<String>> {
-		let Ok(lintian) = which::which("lintian") else {
-            return Ok(vec!["lintian not available, so not testing".into()]);
-        };
-
-		let output = Exec::cmd(lintian)
-			.arg(file_name)
-			.log_and_output(None)?
-			.stdout;
-
-		let strings = output
-			.lines()
-			.filter_map(|s| s.ok())
-			// Ignore errors we don't care about
-			.filter(|s| !s.contains("unknown-section alien"))
-			.map(|s| s.trim().to_owned())
-			.collect();
-
-		Ok(strings)
-	}
-
-	fn unpack(&mut self) -> Result<PathBuf> {
-		let work_dir = common::make_unpack_work_dir(&self.info)?;
-		self.data_tar.unpack(&work_dir)?;
-		Ok(work_dir)
-	}
-
-	fn sanitize_info(&mut self) -> Result<()> {
-		// Version
-
-		// filter out some characters not allowed in debian versions
-		// see lib/dpkg/parsehelp.c parseversion
-		fn valid_version_characters(c: &char) -> bool {
-			matches!(c, '-' | '.' | '+' | '~' | ':') || c.is_ascii_alphanumeric()
-		}
-
-		let iter = self.info.version.chars().filter(valid_version_characters);
-
-		self.info.version = if !self.info.version.starts_with(|c: char| c.is_ascii_digit()) {
-			// make sure the version contains a digit at the start, as required by dpkg-deb
-			std::iter::once('0').chain(iter).collect()
-		} else {
-			iter.collect()
-		};
-
-		// Release
-		// Make sure the release contains digits.
-		if self.info.release.parse::<u32>().is_err() {
-			self.info.release.push_str("-1");
-		}
-
-		// Description
-
-		let mut desc = String::new();
-		for line in self.info.description.lines() {
-			let line = line.replace('\t', "        "); // change tabs to spaces
-			let line = line.trim_end(); // remove trailing whitespace
-			let line = if line.is_empty() { "." } else { line }; // empty lines become dots
-			desc.push(' ');
-			desc.push_str(line);
-			desc.push('\n');
-		}
-		// remove leading blank lines
-		let mut desc = String::from(desc.trim_start_matches('\n'));
-		if !desc.is_empty() {
-			desc.push_str(" .\n");
-		}
-		write!(
-			desc,
-			" (Converted from a {} package by alien version {}.)",
-			self.info.original_format,
-			env!("CARGO_PKG_VERSION")
-		)
-		.unwrap();
-
-		self.info.description = desc;
-
-		Ok(())
-	}
-
-	fn prepare(&mut self, unpacked_dir: &Path) -> Result<()> {
 		let debian_dir = unpacked_dir.join("debian");
 		std::fs::create_dir(&debian_dir)?;
 
 		// Use a patch file to debianize?
-		if let Some(patch) = &self.patch_file {
+		if let Some(patch) = &patch_file {
 			let mut data = vec![];
 			let mut unzipped = GzDecoder::new(File::open(patch)?);
 			unzipped.read_to_end(&mut data)?;
 
 			Exec::cmd("patch")
 				.arg("-p1")
-				.cwd(unpacked_dir)
+				.cwd(&unpacked_dir)
 				.stdin(data)
 				.log_and_output(None)
 				.wrap_err("Patch error")?;
@@ -317,7 +200,7 @@ impl PackageBehavior for Deb {
 			for orig in glob::glob("*.orig").unwrap() {
 				std::fs::remove_file(orig?)?;
 			}
-			common::chmod(debian_dir.join("rules"), 0o755)?;
+			chmod(debian_dir.join("rules"), 0o755)?;
 
 			if let Ok(changelog) = File::open(debian_dir.join("changelog")) {
 				let mut changelog = BufReader::new(changelog);
@@ -326,15 +209,15 @@ impl PackageBehavior for Deb {
 
 				// find the version inside the parens.
 				let Some((a, b)) = line.find('(').zip(line.find(')')) else {
-					return Ok(());
+					return Ok(Self { info, unpacked_dir });
 				};
 				// ensure no whitespace
 				let version = line[a + 1..b].replace(|c: char| c.is_whitespace(), "");
 
-				self.info.set_version_and_release(&version)?;
+				set_version_and_release(&mut info, &version)?;
 			}
 
-			return Ok(());
+			return Ok(Self { info, unpacked_dir });
 		}
 
 		// Automatic debianization.
@@ -358,7 +241,7 @@ impl PackageBehavior for Deb {
 			preinst,
 			prerm,
 			..
-		} = &self.info;
+		} = &info;
 
 		let realname = whoami::realname();
 		let email = fetch_email_address()?;
@@ -501,25 +384,25 @@ binary-arch: build
 binary: binary-indep binary-arch
 .PHONY: build clean binary-indep binary-arch binary
 "#,
-				if self.fix_perms { "" } else { "#" }
+				if args.fixperms { "" } else { "#" }
 			)?;
 		}
 		if *use_scripts {
 			if let Some(postinst) = postinst {
-				self.save_script(&debian_dir, "postinst", postinst.clone())?;
+				Self::save_script(&info, &debian_dir, "postinst", postinst.clone())?;
 			}
 			if let Some(postrm) = postrm {
-				self.save_script(&debian_dir, "postrm", postrm.clone())?;
+				Self::save_script(&info, &debian_dir, "postrm", postrm.clone())?;
 			}
 			if let Some(preinst) = preinst {
-				self.save_script(&debian_dir, "preinst", preinst.clone())?;
+				Self::save_script(&info, &debian_dir, "preinst", preinst.clone())?;
 			}
 			if let Some(prerm) = prerm {
-				self.save_script(&debian_dir, "prerm", prerm.clone())?;
+				Self::save_script(&info, &debian_dir, "prerm", prerm.clone())?;
 			}
 		} else {
 			// There may be a postinst with permissions fixups even when scripts are disabled.
-			self.save_script(&debian_dir, "postinst", String::new())?;
+			Self::save_script(&info, &debian_dir, "postinst", String::new())?;
 		}
 
 		// Move files to FHS-compliant locations, if possible.
@@ -543,13 +426,128 @@ binary: binary-indep binary-arch
 				}
 
 				// store for cleantree
-				self.dir_map.insert(old_dir, new_dir);
+				dir_map.insert(old_dir, new_dir);
 			}
+		}
+
+		Ok(Self { info, unpacked_dir })
+	}
+
+	fn sanitize_info(info: &mut PackageInfo) -> Result<()> {
+		// Version
+
+		// filter out some characters not allowed in debian versions
+		// see lib/dpkg/parsehelp.c parseversion
+		fn valid_version_characters(c: &char) -> bool {
+			matches!(c, '-' | '.' | '+' | '~' | ':') || c.is_ascii_alphanumeric()
+		}
+
+		let iter = info.version.chars().filter(valid_version_characters);
+
+		info.version = if !info.version.starts_with(|c: char| c.is_ascii_digit()) {
+			// make sure the version contains a digit at the start, as required by dpkg-deb
+			std::iter::once('0').chain(iter).collect()
+		} else {
+			iter.collect()
+		};
+
+		// Release
+		// Make sure the release contains digits.
+		if info.release.parse::<u32>().is_err() {
+			info.release.push_str("-1");
+		}
+
+		// Description
+
+		let mut desc = String::new();
+		for line in info.description.lines() {
+			let line = line.replace('\t', "        "); // change tabs to spaces
+			let line = line.trim_end(); // remove trailing whitespace
+			let line = if line.is_empty() { "." } else { line }; // empty lines become dots
+			desc.push(' ');
+			desc.push_str(line);
+			desc.push('\n');
+		}
+		// remove leading blank lines
+		let mut desc = String::from(desc.trim_start_matches('\n'));
+		if !desc.is_empty() {
+			desc.push_str(" .\n");
+		}
+		write!(
+			desc,
+			" (Converted from a {} package by alien version {}.)",
+			info.original_format,
+			env!("CARGO_PKG_VERSION")
+		)
+		.unwrap();
+
+		info.description = desc;
+
+		Ok(())
+	}
+	fn save_script(
+		info: &PackageInfo,
+		debian_dir: &Path,
+		script: &str,
+		mut data: String,
+	) -> Result<()> {
+		if script == "postinst" {
+			Self::patch_post_inst(info, &mut data);
+		}
+		if !data.trim().is_empty() {
+			std::fs::write(debian_dir.join(script), data)?;
 		}
 		Ok(())
 	}
+	fn patch_post_inst(
+		PackageInfo {
+			owninfo, modeinfo, ..
+		}: &PackageInfo,
+		old: &mut String,
+	) {
+		if owninfo.is_empty() {
+			return;
+		}
 
-	fn build(&mut self, unpacked_dir: &Path) -> Result<PathBuf> {
+		// If there is no postinst, let's make one up..
+		if old.is_empty() {
+			old.push_str("#!/bin/sh\n");
+		}
+
+		let index = old.find('\n').unwrap_or(old.len());
+		let first_line = &old[..index];
+
+		if let Some(s) = first_line.strip_prefix("#!") {
+			let s = s.trim_start();
+			if let "/bin/bash" | "/bin/sh" = s {
+				eprintln!("warning: unable to add ownership fixup code to postinst as the postinst is not a shell script!");
+				return;
+			}
+		}
+
+		let mut injection = String::from("\n# alien added permissions fixup code");
+
+		for (file, owi) in owninfo {
+			// no single quotes in single quotes...
+			let escaped_file = file.to_string_lossy().replace('\'', r#"'"'"'"#);
+			write!(injection, "\nchown '{owi}' '{escaped_file}'").unwrap();
+
+			if let Some(mdi) = modeinfo.get(file) {
+				write!(injection, "\nchmod '{mdi}' '{escaped_file}'").unwrap();
+			}
+		}
+		old.insert_str(index, &injection);
+	}
+}
+impl TargetPackageBehavior for DebTarget {
+	fn clear_unpacked_dir(&mut self) {
+		self.unpacked_dir.clear()
+	}
+
+	fn clean_tree(&mut self) {
+		todo!()
+	}
+	fn build(&mut self) -> Result<PathBuf> {
 		let PackageInfo {
 			arch,
 			name,
@@ -568,13 +566,13 @@ binary: binary-indep binary-arch
 		{
 			bail!(
 				"{} is for architecture {}; the package cannot be built on this system",
-				self.deb_file.display(),
+				self.info.file.display(),
 				arch
 			);
 		}
 
 		let log = Exec::cmd("debian/rules")
-			.cwd(unpacked_dir)
+			.cwd(&self.unpacked_dir)
 			.arg("binary")
 			.stderr(Redirection::Merge)
 			.log_and_output_without_checking(None)?;
@@ -590,6 +588,34 @@ binary: binary-indep binary-arch
 
 		let path = format!("{name}_{version}-{release}_{arch}.deb");
 		Ok(PathBuf::from(path))
+	}
+	fn test(&mut self, file_name: &Path) -> Result<Vec<String>> {
+		let Ok(lintian) = which::which("lintian") else {
+			return Ok(vec!["lintian not available, so not testing".into()]);
+		};
+
+		let output = Exec::cmd(lintian)
+			.arg(file_name)
+			.log_and_output(None)?
+			.stdout;
+
+		let strings = output
+			.lines()
+			.filter_map(|s| s.ok())
+			// Ignore errors we don't care about
+			.filter(|s| !s.contains("unknown-section alien"))
+			.map(|s| s.trim().to_owned())
+			.collect();
+
+		Ok(strings)
+	}
+	fn install(&mut self, file_name: &Path) -> Result<()> {
+		Exec::cmd("dpkg")
+			.args(&["--no-force-overwrite", "-i"])
+			.arg(file_name)
+			.log_and_spawn(Verbosity::VeryVerbose)
+			.wrap_err("Unable to install")?;
+		Ok(())
 	}
 }
 
@@ -740,38 +766,17 @@ fn fetch_data_tar(
 	Ok(tar::Archive::new(Cursor::new(tar)))
 }
 
-fn fetch_email_address() -> Result<String> {
-	// TODO: how can this possibly work on windows?
-	// Also TODO: just ask the user for their email address. ffs.
-	// I don't have EMAIL set, and nor do i have `/etc/mailname`,
-	// so now I'm stuck with leah@procrastinator, which of course, is not a real email address.
-
-	if let Ok(email) = std::env::var("EMAIL") {
-		return Ok(email);
-	}
-	let mailname = match std::fs::read_to_string("/etc/mailname") {
-		Ok(o) => o,
-		Err(_) => Exec::cmd("hostname").log_and_output(None)?.stdout_str(),
+fn set_version_and_release(info: &mut PackageInfo, version: &str) -> Result<()> {
+	let (version, release) = if let Some((version, release)) = version.split_once('-') {
+		(version, release)
+	} else {
+		(version, "1")
 	};
-	Ok(format!("{}@{}", whoami::username(), mailname))
-}
 
-trait InfoExt {
-	fn set_version_and_release(&mut self, version: &str) -> Result<()>;
-}
-impl InfoExt for PackageInfo {
-	fn set_version_and_release(&mut self, version: &str) -> Result<()> {
-		let (version, release) = if let Some((version, release)) = version.split_once('-') {
-			(version, release)
-		} else {
-			(version, "1")
-		};
+	// Ignore epochs.
+	let version = version.split_once(':').map(|t| t.1).unwrap_or(version);
 
-		// Ignore epochs.
-		let version = version.split_once(':').map(|t| t.1).unwrap_or(version);
-
-		self.version = version.to_owned();
-		self.release = release.to_owned();
-		Ok(())
-	}
+	info.version = version.to_owned();
+	info.release = release.to_owned();
+	Ok(())
 }
