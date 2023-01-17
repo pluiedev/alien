@@ -25,7 +25,8 @@ const PATCH_DIRS: &[&str] = &["/var/lib/alien", "/usr/share/alien/patches"];
 pub struct DebTarget {
 	info: PackageInfo,
 	unpacked_dir: PathBuf,
-	dir_map: HashMap<PathBuf, PathBuf>,
+	debian_dir: PathBuf,
+	dir_map: HashMap<&'static Path, &'static Path>,
 }
 impl DebTarget {
 	pub fn new(mut info: PackageInfo, unpacked_dir: PathBuf, args: &Args) -> Result<Self> {
@@ -54,7 +55,7 @@ impl DebTarget {
 
 		// Use a patch file to debianize?
 		if let Some(patch) = &patch_file {
-			return Self::patch(info, unpacked_dir, patch, &debian_dir);
+			return Self::patch(info, unpacked_dir, patch, debian_dir);
 		}
 
 		// Automatic debianization.
@@ -74,22 +75,27 @@ impl DebTarget {
 		// Note: no trailing slashes on these directory names!
 		let mut dir_map = HashMap::new();
 
-		for old_dir in ["/usr/man", "/usr/info", "/usr/doc"] {
-			let old_dir = dir.join(old_dir);
-			let mut new_dir = dir.join("/usr/share/");
-			new_dir.push(old_dir.file_name().unwrap());
+		for (old_dir, new_dir) in [
+			("/usr/man", "/usr/share/man"),
+			("/usr/info", "/usr/share/info"),
+			("/usr/doc", "/usr/doc/info"),
+		] {
+			let old_dir = Path::new(old_dir);
+			let new_dir = Path::new(new_dir);
+			let prefixed_old_dir = dir.join(old_dir);
+			let prefixed_new_dir = dir.join(new_dir);
 
-			if old_dir.exists() && !new_dir.exists() {
+			if prefixed_old_dir.is_dir() && !prefixed_new_dir.exists() {
 				// Ignore failure..
-				let dir_base = new_dir.parent().unwrap_or(&new_dir);
+				let dir_base = dir.join(new_dir.parent().unwrap_or(new_dir));
 				Exec::cmd("install")
 					.arg("-d")
 					.arg(dir_base)
 					.log_and_spawn(None)?;
 
-				fs_extra::dir::move_dir(&old_dir, &new_dir, &CopyOptions::new())?;
-				if old_dir.exists() {
-					std::fs::remove_dir_all(&old_dir)?;
+				fs_extra::dir::move_dir(&prefixed_old_dir, &prefixed_new_dir, &CopyOptions::new())?;
+				if prefixed_old_dir.is_dir() {
+					std::fs::remove_dir_all(&prefixed_old_dir)?;
 				}
 
 				// store for cleantree
@@ -100,6 +106,7 @@ impl DebTarget {
 		Ok(Self {
 			info,
 			unpacked_dir,
+			debian_dir: dir,
 			dir_map,
 		})
 	}
@@ -108,7 +115,7 @@ impl DebTarget {
 		mut info: PackageInfo,
 		unpacked_dir: PathBuf,
 		patch: &Path,
-		debian_dir: &Path,
+		debian_dir: PathBuf,
 	) -> Result<Self> {
 		let mut data = vec![];
 		let mut unzipped = GzDecoder::new(File::open(patch)?);
@@ -146,6 +153,7 @@ impl DebTarget {
 		Ok(Self {
 			info,
 			unpacked_dir,
+			debian_dir,
 			dir_map: HashMap::new(),
 		})
 	}
@@ -210,7 +218,27 @@ impl TargetPackageBehavior for DebTarget {
 	}
 
 	fn clean_tree(&mut self) -> Result<()> {
-		todo!()
+		let dir = &self.unpacked_dir;
+		for (old_dir, new_dir) in &self.dir_map {
+			let prefixed_old_dir = dir.join(old_dir);
+			let prefixed_new_dir = dir.join(new_dir);
+
+			if !prefixed_old_dir.exists() && prefixed_new_dir.is_dir() {
+				// Ignore failure.. (should I?)
+				let dir_base = dir.join(old_dir.parent().unwrap_or(old_dir));
+				Exec::cmd("install")
+					.arg("-d")
+					.arg(dir_base)
+					.log_and_spawn(None)?;
+
+				fs_extra::dir::move_dir(&prefixed_new_dir, &prefixed_old_dir, &CopyOptions::new())?;
+				if prefixed_new_dir.is_dir() {
+					std::fs::remove_dir_all(&prefixed_new_dir)?;
+				}
+			}
+		}
+		std::fs::remove_dir_all(&self.debian_dir)?;
+		Ok(())
 	}
 
 	fn build(&mut self) -> Result<PathBuf> {
