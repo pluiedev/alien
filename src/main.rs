@@ -3,7 +3,7 @@
 
 use alien::{
 	util::{Args, Verbosity},
-	Format, AnySourcePackage, AnyTargetPackage, SourcePackage, TargetPackage,
+	AnySourcePackage, AnyTargetPackage, Format, SourcePackage, TargetPackage,
 };
 use clap::Parser;
 

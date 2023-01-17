@@ -25,6 +25,7 @@ pub struct DebSource {
 	data: Data,
 }
 impl DebSource {
+	#[must_use]
 	pub fn check_file(file: &Path) -> bool {
 		match file.extension() {
 			Some(o) => o.eq_ignore_ascii_case("deb"),

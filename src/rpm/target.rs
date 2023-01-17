@@ -13,8 +13,8 @@ use simple_eyre::{
 use subprocess::{Exec, Redirection};
 
 use crate::{
-	PackageInfo, TargetPackage, Script,
 	util::{ExecExt, Verbosity},
+	PackageInfo, Script, TargetPackage,
 };
 
 pub struct RpmTarget {

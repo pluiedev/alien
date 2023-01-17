@@ -2,7 +2,9 @@
 #![warn(rust_2018_idioms, clippy::pedantic)]
 #![allow(
 	clippy::redundant_closure_for_method_calls,
-	clippy::module_name_repetitions
+	clippy::module_name_repetitions,
+	clippy::missing_errors_doc,
+	clippy::missing_panics_doc,
 )]
 
 use std::{
@@ -13,7 +15,7 @@ use std::{
 
 use enum_dispatch::enum_dispatch;
 use enumflags2::BitFlags;
-use simple_eyre::eyre::{Result, bail};
+use simple_eyre::eyre::{bail, Result};
 use util::Args;
 
 use deb::{DebSource, DebTarget};
@@ -208,7 +210,7 @@ pub struct FileInfo {
 /// | [`Self::AfterInstall`]    | `postinst`        | `%post`            | `%{POSTIN}`   |
 /// | [`Self::BeforeUninstall`] | `prerm`           | `%preun`           | `%{PREUN}`    |
 /// | [`Self::AfterInstall`]    | `postrm`          | `%postun`          | `%{POSTUN}`   |
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Script {
 	/// Script that will be run before install.
 	BeforeInstall,
@@ -232,6 +234,7 @@ impl Script {
 	///
 	/// See the [type-level documentation](Self) for the mapping between
 	/// Debian-style names and [`Script`] variants.
+	#[must_use]
 	pub fn from_deb_name(s: &str) -> Option<Self> {
 		match s {
 			"preinst" => Some(Self::BeforeInstall),
@@ -246,6 +249,7 @@ impl Script {
 	///
 	/// See the [type-level documentation](Self) for the mapping between
 	/// Debian-style names and [`Script`] variants.
+	#[must_use]
 	pub fn deb_name(&self) -> &str {
 		match self {
 			Self::BeforeInstall => "preinst",
@@ -258,6 +262,7 @@ impl Script {
 	///
 	/// See the [type-level documentation](Self) for the mapping between
 	/// RPM query keys and [`Script`] variants.
+	#[must_use]
 	pub fn rpm_query_key(&self) -> &str {
 		match self {
 			Self::BeforeInstall => "%{PREIN}",
@@ -270,6 +275,7 @@ impl Script {
 	///
 	/// See the [type-level documentation](Self) for the mapping between
 	/// RPM scriptlet names and [`Script`] variants.
+	#[must_use]
 	pub fn rpm_scriptlet_name(&self) -> &str {
 		match self {
 			Self::BeforeInstall => "%pre",
@@ -305,6 +311,7 @@ pub enum Format {
 	Tgz,
 }
 impl Format {
+	#[must_use]
 	pub fn new(args: &Args) -> BitFlags<Self> {
 		let mut set = BitFlags::empty();
 		if args.to_deb {

@@ -12,9 +12,8 @@ use simple_eyre::{
 use subprocess::{Exec, NullFile, Redirection};
 
 use crate::{
-	{Format, PackageInfo, SourcePackage, Script, FileInfo},
 	util::{chmod, make_unpack_work_dir, ExecExt},
-	Args,
+	Args, {FileInfo, Format, PackageInfo, Script, SourcePackage},
 };
 
 pub struct RpmSource {
@@ -22,6 +21,7 @@ pub struct RpmSource {
 	prefixes: Option<PathBuf>,
 }
 impl RpmSource {
+	#[must_use]
 	pub fn check_file(file: &Path) -> bool {
 		match file.extension() {
 			Some(o) => o.eq_ignore_ascii_case("rpm"),

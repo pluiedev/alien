@@ -16,6 +16,7 @@ pub struct LsbSource {
 impl LsbSource {
 	/// `lsb` files are `rpm`s with a lsb- prefix, that depend on
 	/// a package called 'lsb' and nothing else.
+	#[must_use]
 	pub fn check_file(file: &Path) -> bool {
 		let Some(stem) = file.file_stem().and_then(|s| s.to_str()) else {
 			return false;
@@ -82,9 +83,7 @@ impl LsbTarget {
 
 		let rpm = RpmTarget::new(info, unpacked_dir)?;
 
-		Ok(Self {
-			rpm,
-		})
+		Ok(Self { rpm })
 	}
 }
 impl TargetPackage for LsbTarget {
