@@ -87,7 +87,7 @@ impl ExecExt for Exec {
 
 		if verbosity == Verbosity::VeryVerbose {
 			let stdout = String::from_utf8_lossy(&output.stdout);
-			println!("{stdout}")
+			println!("{stdout}");
 		}
 		Ok(output)
 	}
@@ -133,7 +133,7 @@ impl ExecExt for Pipeline {
 
 		if verbosity == Verbosity::VeryVerbose {
 			let stdout = String::from_utf8_lossy(&output.stdout);
-			println!("{stdout}")
+			println!("{stdout}");
 		}
 		Ok(output)
 	}
@@ -180,5 +180,5 @@ pub fn fetch_email_address() -> Result<String> {
 		Ok(o) => o,
 		Err(_) => Exec::cmd("hostname").log_and_output(None)?.stdout_str(),
 	};
-	Ok(format!("{}@{}", whoami::username(), mailname))
+	Ok(format!("{}@{mailname}", whoami::username()))
 }

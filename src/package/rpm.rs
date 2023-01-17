@@ -84,7 +84,7 @@ impl RpmSource {
 					if t.starts_with('/') {
 						let mut t = t.replacen("/bin/sh", "#!/bin/bash", 1);
 						if let Some(nl) = t.find('\n') {
-							t.insert_str(nl, &prefix_code)
+							t.insert_str(nl, &prefix_code);
 						}
 						return Some(t);
 					}
@@ -142,8 +142,7 @@ impl RpmSource {
 			let description = description.as_deref().unwrap_or("");
 			let s = description
 				.split_once('\n')
-				.map(|t| t.0)
-				.unwrap_or(description);
+				.map_or(description, |t| t.0);
 			if s.is_empty() {
 				// Fallback.
 				"Converted RPM package".into()
@@ -283,7 +282,7 @@ impl SourcePackageBehavior for RpmSource {
 			.map(PathBuf::from)
 			.collect();
 
-		let cwd = std::env::current_dir()?;
+		let cur_dir = std::env::current_dir()?;
 		std::env::set_current_dir(&work_dir)?;
 		// glob doesn't allow you to specify a cwd... annoying, but ok
 		for file in glob::glob("**/*").unwrap() {
@@ -293,7 +292,7 @@ impl SourcePackageBehavior for RpmSource {
 				chmod(&new_file, 0o755)?;
 			}
 		}
-		std::env::set_current_dir(cwd)?;
+		std::env::set_current_dir(cur_dir)?;
 
 		// If the package is relocatable, we'd like to move it to be under the `self.prefixes` directory.
 		// However, it's possible that that directory is in the package - it seems some rpm's are marked
@@ -380,14 +379,14 @@ impl SourcePackageBehavior for RpmSource {
 			let file = PathBuf::from(file);
 
 			// TODO: this is not gonna work on windows, is it
-			let uid = match User::from_name(owner)? {
+			let user_id = match User::from_name(owner)? {
 				Some(User { uid, .. }) if uid.is_root() => uid,
 				_ => {
 					owninfo.insert(file.clone(), owner.to_owned());
 					Uid::from_raw(0)
 				}
 			};
-			let gid = match Group::from_name(group)? {
+			let group_id = match Group::from_name(group)? {
 				Some(Group { gid, .. }) if gid.as_raw() == 0 => gid,
 				_ => {
 					let s = owninfo.entry(file.clone()).or_default();
@@ -406,8 +405,8 @@ impl SourcePackageBehavior for RpmSource {
 			let file = work_dir.join(file);
 			if file.exists() {
 				if geteuid().is_root() {
-					chown(&file, Some(uid), Some(gid)).wrap_err_with(|| {
-						format!("failed chowning {} to {uid}:{gid}", file.display())
+					chown(&file, Some(user_id), Some(group_id)).wrap_err_with(|| {
+						format!("failed chowning {} to {user_id}:{group_id}", file.display())
 					})?;
 				}
 				chmod(&file, mode)
@@ -427,7 +426,7 @@ pub struct RpmTarget {
 }
 impl RpmTarget {
 	pub fn new(mut info: PackageInfo, unpacked_dir: PathBuf) -> Result<Self> {
-		Self::sanitize_info(&mut info)?;
+		Self::sanitize_info(&mut info);
 
 		let mut file_list = String::new();
 		for filename in &info.file_list {
@@ -620,9 +619,7 @@ r#"%description
 		Ok(rpm)
 	}
 
-	fn sanitize_info(info: &mut PackageInfo) -> Result<()> {
-		info.version = info.version.replace('-', "_");
-
+	fn sanitize_info(info: &mut PackageInfo) {
 		// When retrieving scripts for building, we have to do some truly sick mangling.
 		// Since debian/slackware scripts can be anything -- perl programs or binary files --
 		// and rpm is limited to only shell scripts, we need to encode the files and add a
@@ -657,6 +654,8 @@ rmdir /tmp/alien.$$
 			);
 			*script = Some(patched);
 		}
+		
+		info.version = info.version.replace('-', "_");
 
 		script_helper(&mut info.preinst);
 		script_helper(&mut info.postinst);
@@ -674,14 +673,12 @@ rmdir /tmp/alien.$$
 		if let Some(arch) = arch {
 			info.arch = arch.to_owned();
 		}
-
-		Ok(())
 	}
 }
 
 impl TargetPackageBehavior for RpmTarget {
 	fn clear_unpacked_dir(&mut self) {
-		self.unpacked_dir.clear()
+		self.unpacked_dir.clear();
 	}
 
 	fn clean_tree(&mut self) {}

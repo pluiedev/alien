@@ -82,7 +82,7 @@ impl DebSource {
 
 				match field.as_str() {
 					"package" => info.name = value,
-					"version" => set_version_and_release(&mut info, &value)?,
+					"version" => set_version_and_release(&mut info, &value),
 					"architecture" => info.arch = value,
 					"maintainer" => info.maintainer = value,
 					"section" => info.group = value,
@@ -212,9 +212,9 @@ impl DebTarget {
 					return Ok(Self { info, unpacked_dir });
 				};
 				// ensure no whitespace
-				let version = line[a + 1..b].replace(|c: char| c.is_whitespace(), "");
+				let version = line[a + 1..b].replace(char::is_whitespace, "");
 
-				set_version_and_release(&mut info, &version)?;
+				set_version_and_release(&mut info, &version);
 			}
 
 			return Ok(Self { info, unpacked_dir });
@@ -438,17 +438,17 @@ binary: binary-indep binary-arch
 
 		// filter out some characters not allowed in debian versions
 		// see lib/dpkg/parsehelp.c parseversion
-		fn valid_version_characters(c: &char) -> bool {
+		fn valid_version_characters(c: char) -> bool {
 			matches!(c, '-' | '.' | '+' | '~' | ':') || c.is_ascii_alphanumeric()
 		}
 
-		let iter = info.version.chars().filter(valid_version_characters);
+		let iter = info.version.chars().filter(|&c| valid_version_characters(c));
 
-		info.version = if !info.version.starts_with(|c: char| c.is_ascii_digit()) {
+		info.version = if info.version.starts_with(|c: char| c.is_ascii_digit()) {
+			iter.collect()
+		} else {
 			// make sure the version contains a digit at the start, as required by dpkg-deb
 			std::iter::once('0').chain(iter).collect()
-		} else {
-			iter.collect()
 		};
 
 		// Release
@@ -478,8 +478,7 @@ binary: binary-indep binary-arch
 			" (Converted from a {} package by alien version {}.)",
 			info.original_format,
 			env!("CARGO_PKG_VERSION")
-		)
-		.unwrap();
+		)?;
 
 		info.description = desc;
 
@@ -541,7 +540,7 @@ binary: binary-indep binary-arch
 }
 impl TargetPackageBehavior for DebTarget {
 	fn clear_unpacked_dir(&mut self) {
-		self.unpacked_dir.clear()
+		self.unpacked_dir.clear();
 	}
 
 	fn clean_tree(&mut self) {
@@ -636,16 +635,16 @@ fn get_patch(info: &PackageInfo, anypatch: bool, dirs: &[&str]) -> Option<PathBu
 	if patches.is_empty() {
 		// Try not matching the release, see if that helps.
 		patches.extend(dirs.iter().flat_map(|dir| {
-			let p = format!("{}/{}_{}*.diff.gz", dir, info.name, info.version);
+			let p = format!("{dir}/{}_{}*.diff.gz", info.name, info.version);
 			glob::glob(&p).unwrap()
 		}));
 
 		if !patches.is_empty() && anypatch {
 			// Fall back to anything that matches the name.
 			patches.extend(dirs.iter().flat_map(|dir| {
-				let p = format!("{}/{}_*.diff.gz", dir, info.name);
+				let p = format!("{dir}/{}_*.diff.gz", info.name);
 				glob::glob(&p).unwrap()
-			}))
+			}));
 		}
 	}
 
@@ -766,7 +765,7 @@ fn fetch_data_tar(
 	Ok(tar::Archive::new(Cursor::new(tar)))
 }
 
-fn set_version_and_release(info: &mut PackageInfo, version: &str) -> Result<()> {
+fn set_version_and_release(info: &mut PackageInfo, version: &str) {
 	let (version, release) = if let Some((version, release)) = version.split_once('-') {
 		(version, release)
 	} else {
@@ -774,9 +773,8 @@ fn set_version_and_release(info: &mut PackageInfo, version: &str) -> Result<()> 
 	};
 
 	// Ignore epochs.
-	let version = version.split_once(':').map(|t| t.1).unwrap_or(version);
+	let version = version.split_once(':').map_or(version, |t| t.1);
 
 	info.version = version.to_owned();
 	info.release = release.to_owned();
-	Ok(())
 }

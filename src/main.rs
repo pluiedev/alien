@@ -1,3 +1,7 @@
+#![forbid(unsafe_code)]
+#![warn(rust_2018_idioms, clippy::pedantic)]
+#![allow(clippy::redundant_closure_for_method_calls, clippy::module_name_repetitions)]
+
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -8,6 +12,7 @@ use util::Verbosity;
 mod package;
 mod util;
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(clap::Parser, Debug)]
 pub struct Args {
 	/// Generate a Debian deb package (default).

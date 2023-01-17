@@ -105,7 +105,7 @@ impl LsbTarget {
 }
 impl TargetPackageBehavior for LsbTarget {
 	fn clear_unpacked_dir(&mut self) {
-		self.rpm.clear_unpacked_dir()
+		self.rpm.clear_unpacked_dir();
 	}
 
 	fn clean_tree(&mut self) {
