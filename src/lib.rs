@@ -80,9 +80,6 @@ pub trait TargetPackage {
 	fn test(&mut self, package: &Path) -> Result<Vec<String>> {
 		Ok(vec![])
 	}
-
-	/// Installs the given package file.
-	fn install(&mut self, package: &Path) -> Result<()>;
 }
 
 #[enum_dispatch(SourcePackage)]
@@ -312,6 +309,17 @@ pub enum Format {
 	Slp,
 	/// The `.tgz` format, used by Slackware.
 	Tgz,
+}
+impl Format {
+	pub fn install(self, path: &Path) -> Result<()> {
+		match self {
+			Format::Deb => deb::install(path),
+			Format::Lsb | Format::Rpm => rpm::install(path),
+			Format::Pkg => todo!(),
+			Format::Slp => todo!(),
+			Format::Tgz => todo!(),
+		}
+	}
 }
 impl Display for Format {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

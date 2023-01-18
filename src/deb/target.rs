@@ -14,7 +14,7 @@ use subprocess::{Exec, Redirection};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 
 use crate::{
-	util::{chmod, fetch_email_address, mkdir, ExecExt, Verbosity},
+	util::{chmod, fetch_email_address, mkdir, ExecExt},
 	Args, PackageInfo, Script, TargetPackage,
 };
 
@@ -305,14 +305,6 @@ impl TargetPackage for DebTarget {
 			.collect();
 
 		Ok(strings)
-	}
-	fn install(&mut self, file_name: &Path) -> Result<()> {
-		Exec::cmd("dpkg")
-			.args(&["--no-force-overwrite", "-i"])
-			.arg(file_name)
-			.log_and_spawn(Verbosity::VeryVerbose)
-			.wrap_err("Unable to install")?;
-		Ok(())
 	}
 }
 

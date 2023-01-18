@@ -6,13 +6,10 @@ use std::{
 };
 
 use base64::Engine;
-use eyre::{bail, Context, Result};
+use eyre::{bail, Result};
 use subprocess::{Exec, Redirection};
 
-use crate::{
-	util::{ExecExt, Verbosity},
-	PackageInfo, Script, TargetPackage,
-};
+use crate::{util::ExecExt, PackageInfo, Script, TargetPackage};
 
 #[derive(Debug)]
 pub struct RpmTarget {
@@ -269,18 +266,5 @@ impl TargetPackage for RpmTarget {
 	}
 	fn build(&mut self) -> Result<PathBuf> {
 		self.build_with(Path::new("rpmbuild"))
-	}
-	fn install(&mut self, file_name: &Path) -> Result<()> {
-		let cmd = Exec::cmd("rpm").arg("-ivh");
-		let cmd = if let Some(opt) = std::env::var_os("RPMINSTALLOPT") {
-			let mut path = PathBuf::from(opt);
-			path.push(file_name);
-			cmd.arg(path)
-		} else {
-			cmd.arg(file_name)
-		};
-		cmd.log_and_output(Verbosity::VeryVerbose)
-			.wrap_err("Unable to install")?;
-		Ok(())
 	}
 }

@@ -335,10 +335,9 @@ pub(crate) fn fetch_email_address() -> String {
 	if let Ok(email) = std::env::var("EMAIL") {
 		email
 	} else {
-		let mailname = match std::fs::read_to_string("/etc/mailname") {
-			Ok(o) => o,
-			Err(_) => whoami::hostname(),
-		};
-		format!("{}@{mailname}", whoami::username())
+		let mailname =
+			std::fs::read_to_string("/etc/mailname").unwrap_or_else(|_| whoami::hostname());
+		let username = whoami::username();
+		format!("{username}@{mailname}")
 	}
 }

@@ -83,6 +83,8 @@ impl LsbTarget {
 			info.name.insert_str(0, "lsb-");
 		}
 		info.dependencies.push("lsb".into());
+		
+		// Always include scripts when generating lsb package.
 
 		let rpm = RpmTarget::new(info, unpacked_dir)?;
 
@@ -101,9 +103,5 @@ impl TargetPackage for LsbTarget {
 		} else {
 			self.rpm.build()
 		}
-	}
-
-	fn install(&mut self, file_name: &Path) -> Result<()> {
-		self.rpm.install(file_name)
 	}
 }

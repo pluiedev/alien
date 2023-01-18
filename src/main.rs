@@ -118,7 +118,7 @@ fn main() -> Result<()> {
 					}
 				}
 				if args.install {
-					// pkg.install(&new_file)?;
+					format.install(&new_file)?;
 					std::fs::remove_file(&new_file)?;
 				} else {
 					// Tell them where the package ended up.
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
 				pkg.clean_tree()?;
 			} else if args.install {
 				// Don't convert the package, but do install it.
-				// pkg.install(file)?;
+				format.install(file)?;
 				// Note I don't remove it. I figure that might annoy
 				// people, since it was an input file.
 			}

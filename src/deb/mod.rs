@@ -4,6 +4,19 @@ pub mod target;
 pub use source::DebSource;
 pub use target::DebTarget;
 
+use crate::util::{ExecExt, Verbosity};
+use eyre::Result;
+use std::path::Path;
+use subprocess::Exec;
+
+pub fn install(deb: &Path) -> Result<()> {
+	Exec::cmd("dpkg")
+		.args(&["--no-force-overwrite", "-i"])
+		.arg(deb)
+		.log_and_output(Verbosity::VeryVerbose)?;
+	Ok(())
+}
+
 fn set_version_and_release(info: &mut super::PackageInfo, version: &str) {
 	let (version, release) = if let Some((version, release)) = version.split_once('-') {
 		(version, release)
