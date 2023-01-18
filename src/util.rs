@@ -4,8 +4,7 @@ use bpaf::{construct, long, Parser};
 use enumflags2::BitFlags;
 use eyre::{bail, Context, Result};
 use once_cell::sync::OnceCell;
-use simple_eyre::eyre::{bail, Context, Result};
-use subprocess::{CaptureData, Exec, NullFile, Pipeline};
+use subprocess::{CaptureData, Exec, NullFile, Pipeline, Redirection};
 
 use crate::{Format, PackageInfo};
 
@@ -217,10 +216,12 @@ impl ExecExt for Exec {
 		Ok(out)
 	}
 	fn log_and_output_without_checking(
-		self,
+		mut self,
 		verbosity: impl Into<Option<Verbosity>>,
 	) -> Result<CaptureData> {
 		let verbosity = verbosity.into().unwrap_or_else(Verbosity::get);
+		self = self.stdout(Redirection::Pipe);
+
 		let cmdline = self.to_cmdline_lossy();
 		if verbosity != Verbosity::Normal {
 			println!("\t{cmdline}");
