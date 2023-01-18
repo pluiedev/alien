@@ -199,6 +199,7 @@ fn fetch_control_files(
 				.arg("--info")
 				.arg(deb_file)
 				.arg(file)
+				.stderr(NullFile)
 				.log_and_output_without_checking(None)?;
 
 			if out.success() {
