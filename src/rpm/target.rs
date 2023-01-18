@@ -266,7 +266,7 @@ rmdir /tmp/alien.$$
 
 impl TargetPackage for RpmTarget {
 	fn clean_tree(&mut self) -> Result<()> {
-		std::fs::remove_file(&self.spec)?;
+		let _ = std::fs::remove_file(&self.spec);
 		Ok(())
 	}
 	fn build(&mut self) -> Result<PathBuf> {
