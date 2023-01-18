@@ -15,7 +15,7 @@ use subprocess::{Exec, Redirection};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 
 use crate::{
-	util::{chmod, fetch_email_address, ExecExt, Verbosity},
+	util::{chmod, fetch_email_address, mkdir, ExecExt, Verbosity},
 	Args, PackageInfo, Script, TargetPackage,
 };
 
@@ -38,7 +38,14 @@ impl DebTarget {
 				overwrite: true,
 				..Default::default()
 			};
-			fs_extra::dir::copy(&unpacked_dir, unpacked_dir.with_extension("orig"), &option)?;
+			let mut target = unpacked_dir.as_os_str().to_owned();
+			target.push(".orig");
+			let target = PathBuf::from(target);
+
+			if !target.exists() {
+				mkdir(&target)?;
+			}
+			fs_extra::dir::copy(&unpacked_dir, target, &option)?;
 		}
 
 		let patch_file = if args.deb_args.nopatch {

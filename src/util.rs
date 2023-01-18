@@ -281,9 +281,26 @@ impl ExecExt for Pipeline {
 	}
 }
 
+
+#[cfg(unix)]
+pub(crate) fn mkdir<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+	fn _mkdir(path: &Path) -> std::io::Result<()> {
+		if let Some(Verbosity::Verbose) = VERBOSITY.get() {
+			println!("\tmkdir {}", path.display())
+		}
+
+		std::fs::create_dir(path)
+	}
+	_mkdir(path.as_ref())
+}
+
 #[cfg(unix)]
 pub(crate) fn chmod<P: AsRef<Path>>(path: P, mode: u32) -> std::io::Result<()> {
 	fn _chmod(path: &Path, mode: u32) -> std::io::Result<()> {
+		if let Some(Verbosity::Verbose) = VERBOSITY.get() {
+			println!("\tchmod {mode:o} {}", path.display())
+		}
+
 		let mut perms = std::fs::metadata(path)?.permissions();
 		perms.set_mode(mode);
 		std::fs::set_permissions(path, perms)?;
@@ -299,7 +316,7 @@ pub(crate) fn chmod(_path: &Path, _mode: u32) -> std::io::Result<()> {
 
 pub(crate) fn make_unpack_work_dir(info: &PackageInfo) -> Result<PathBuf> {
 	let work_dir = format!("{}-{}", info.name, info.version);
-	std::fs::create_dir(&work_dir).wrap_err_with(|| format!("unable to mkdir {work_dir}"))?;
+	mkdir(&work_dir).wrap_err_with(|| format!("unable to mkdir {work_dir}"))?;
 
 	// If the parent directory is suid/guid, mkdir will make the root
 	// directory of the package inherit those bits. That is a bad thing,

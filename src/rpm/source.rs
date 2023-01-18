@@ -9,7 +9,7 @@ use nix::unistd::{chown, geteuid, Gid, Group, Uid, User};
 use subprocess::{Exec, NullFile};
 
 use crate::{
-	util::{chmod, make_unpack_work_dir, ExecExt},
+	util::{chmod, make_unpack_work_dir, mkdir, ExecExt},
 	Args, {FileInfo, Format, PackageInfo, Script, SourcePackage},
 };
 
@@ -210,7 +210,7 @@ impl SourcePackage for RpmSource {
 						relocate = false;
 						break;
 					}
-					std::fs::create_dir(&dest)?;
+					mkdir(&dest)?;
 				}
 
 				if relocate {
