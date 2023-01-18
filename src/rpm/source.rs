@@ -335,8 +335,15 @@ impl<'r> RpmReader<'r> {
 		Ok(if res == "(none)" { None } else { Some(res) })
 	}
 	fn read_arch(&self, target: Option<&str>) -> Result<String> {
-		let arch = if let Some(arch) = &target {
-			let arch = match arch.as_bytes() {
+		if let Some(arch) = target {
+			Ok(Self::map_arch(arch).to_owned())
+		} else {
+			let arch = self.read_field("%{ARCH}")?.unwrap_or_default();
+			Ok(Self::map_arch(&arch).to_owned())
+		}
+	}
+	fn map_arch(arch: &str) -> &str {
+		match arch.as_bytes() {
 				// NOTE(pluie): do NOT ask me where these numbers came from.
 				// I have NO clue.
 				b"1" => "i386",
@@ -356,12 +363,7 @@ impl<'r> RpmReader<'r> {
 				&[b'i' | b'I', b'0'..=b'9', b'8', b'6'] => "i386",
 
 				_ => arch,
-			};
-			arch.to_owned()
-		} else {
-			self.read_field("%{ARCH}")?.unwrap_or_default()
-		};
-		Ok(arch)
+		}
 	}
 	fn read_file_list(&self, flag: &str) -> Result<Vec<PathBuf>> {
 		let mut files: Vec<_> = Self::rpm()
