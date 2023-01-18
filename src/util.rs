@@ -338,7 +338,7 @@ pub(crate) fn fetch_email_address() -> Result<String> {
 	}
 	let mailname = match std::fs::read_to_string("/etc/mailname") {
 		Ok(o) => o,
-		Err(_) => Exec::cmd("hostname").log_and_output(None)?.stdout_str(),
+		Err(_) => whoami::hostname(),
 	};
 	Ok(format!("{}@{mailname}", whoami::username()))
 }
