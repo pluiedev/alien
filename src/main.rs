@@ -35,6 +35,8 @@ fn main() -> Result<()> {
 			"The options --nopatch and --patchfile cannot be used together.",
 		)
 		.to_options()
+		.usage("Usage: alien [options] file [...]")
+		.version(env!("CARGO_PKG_VERSION"))
 		.run();
 
 	Verbosity::set(args.verbosity);
