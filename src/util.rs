@@ -119,7 +119,7 @@ fn formats() -> impl Parser<BitFlags<Format>> {
 		let mut formats = BitFlags::empty();
 
 		#[rustfmt::skip]
-		let _ = {
+		{
 			if d { formats |= Format::Deb; }
 			if r { formats |= Format::Rpm; }
 			if s { formats |= Format::Slp; }
@@ -282,12 +282,11 @@ impl ExecExt for Pipeline {
 	}
 }
 
-
 #[cfg(unix)]
 pub(crate) fn mkdir<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
 	fn _mkdir(path: &Path) -> std::io::Result<()> {
 		if let Some(Verbosity::Verbose) = VERBOSITY.get() {
-			println!("\tmkdir {}", path.display())
+			println!("\tmkdir {}", path.display());
 		}
 
 		std::fs::create_dir(path)
@@ -299,7 +298,7 @@ pub(crate) fn mkdir<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
 pub(crate) fn chmod<P: AsRef<Path>>(path: P, mode: u32) -> std::io::Result<()> {
 	fn _chmod(path: &Path, mode: u32) -> std::io::Result<()> {
 		if let Some(Verbosity::Verbose) = VERBOSITY.get() {
-			println!("\tchmod {mode:o} {}", path.display())
+			println!("\tchmod {mode:o} {}", path.display());
 		}
 
 		let mut perms = std::fs::metadata(path)?.permissions();
@@ -327,18 +326,18 @@ pub(crate) fn make_unpack_work_dir(info: &PackageInfo) -> Result<PathBuf> {
 	Ok(PathBuf::from(work_dir))
 }
 
-pub(crate) fn fetch_email_address() -> Result<String> {
+pub(crate) fn fetch_email_address() -> String {
 	// TODO: how can this possibly work on windows?
 	// Also TODO: just ask the user for their email address. ffs.
 	// I don't have EMAIL set, and nor do i have `/etc/mailname`,
 	// so now I'm stuck with leah@procrastinator, which of course, is not a real email address.
 
 	if let Ok(email) = std::env::var("EMAIL") {
-		return Ok(email);
+		return email;
 	}
 	let mailname = match std::fs::read_to_string("/etc/mailname") {
 		Ok(o) => o,
 		Err(_) => whoami::hostname(),
 	};
-	Ok(format!("{}@{mailname}", whoami::username()))
+	format!("{}@{mailname}", whoami::username())
 }
