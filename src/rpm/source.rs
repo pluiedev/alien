@@ -6,11 +6,7 @@ use std::{
 use eyre::{bail, Context, Result};
 use fs_extra::dir::CopyOptions;
 use nix::unistd::{chown, geteuid, Gid, Group, Uid, User};
-use simple_eyre::{
-	eyre::{bail, Context},
-	Result,
-};
-use subprocess::{Exec, NullFile, Redirection};
+use subprocess::{Exec, NullFile};
 
 use crate::{
 	util::{chmod, make_unpack_work_dir, ExecExt},
@@ -241,7 +237,7 @@ impl SourcePackage for RpmSource {
 		let out = Exec::cmd("rpm")
 			.args(&[
 				"--queryformat",
-				r#"'[%{FILEMODES} %{FILEUSERNAME} %{FILEGROUPNAME} %{FILENAMES}\n]'"#,
+				r#"[%{FILEMODES} %{FILEUSERNAME} %{FILEGROUPNAME} %{FILENAMES}\n]"#,
 				"-qp",
 			])
 			.arg(&self.info.file)
