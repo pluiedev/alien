@@ -281,7 +281,8 @@ fn read_control(info: &mut PackageInfo, control: &str) {
 				"maintainer" => info.maintainer = value,
 				"section" => info.group = value,
 				"description" => info.summary = value,
-				"depends" => info.dependencies = value.split(", ").map(|s| s.to_owned()).collect(),
+				// TODO: think more about handling dependencies
+				// "depends" => info.dependencies = value.split(", ").map(|s| s.to_owned()).collect(),
 				_ => { /* ignore */ }
 			}
 		}
