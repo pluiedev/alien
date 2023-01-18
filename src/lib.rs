@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms, clippy::pedantic)]
 #![allow(
-	clippy::redundant_closure_for_method_calls,
+	clippy::let_unit_value,
 	clippy::module_name_repetitions,
 	clippy::missing_errors_doc,
-	clippy::missing_panics_doc
+	clippy::missing_panics_doc,
+	clippy::redundant_closure_for_method_calls,
+	clippy::struct_excessive_bools
 )]
 
 use std::{

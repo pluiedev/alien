@@ -326,7 +326,7 @@ struct DebWriter {
 impl DebWriter {
 	fn new(dir: PathBuf, info: PackageInfo) -> Result<Self> {
 		let realname = whoami::realname();
-		let email = fetch_email_address()?;
+		let email = fetch_email_address();
 		let date = OffsetDateTime::now_local()
 			.unwrap_or_else(|_| OffsetDateTime::now_utc())
 			.format(&Rfc2822)?;
