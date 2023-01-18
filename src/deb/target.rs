@@ -258,7 +258,8 @@ impl TargetPackage for DebTarget {
 			&& !Exec::cmd("dpkg-architecture")
 				.arg("-i")
 				.arg(arch)
-				.log_and_output(None)?
+				.log_and_output_without_checking(None)
+				.wrap_err("dpkg-architecture not found - have you installed dpkg-dev?")?
 				.success()
 		{
 			bail!(
