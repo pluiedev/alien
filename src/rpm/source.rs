@@ -127,27 +127,27 @@ impl SourcePackage for RpmSource {
 		let rpm2cpio = || Exec::cmd("rpm2cpio").arg(&self.info.file);
 
 		// Check if we need to use lzma to uncompress the cpio archive
-		let cmd = rpm2cpio()
-			| Exec::cmd("lzma")
-				.arg("-tq")
-				.stdout(NullFile)
-				.stderr(NullFile);
+		let lzma = if let Ok(lzma) = which::which("lzma") {
+			Exec::cmd(lzma)
+		} else {
+			// Some distros don't have `lzma` (such as mine, Fedora)!
+			// `xz --format=lzma` would do just fine however
+			Exec::cmd("xz").arg("--format=lzma")
+		};
+		let cmd = (rpm2cpio() | lzma.arg("-tq")).stdout(NullFile);
 
-		let decomp = if cmd.log_and_output(None)?.success() {
+		let decomp = if cmd.log_and_output_without_checking(None)?.success() {
 			|| Exec::cmd("lzma").arg("-dq")
 		} else {
 			|| Exec::cmd("cat")
 		};
 
-		let cpio = Exec::cmd("cpio")
-			.cwd(&work_dir)
-			.args(&[
+		let cpio = Exec::cmd("cpio").cwd(&work_dir).args(&[
 				"--extract",
 				"--make-directories",
 				"--no-absolute-filenames",
 				"--preserve-modification-time",
-			])
-			.stderr(Redirection::Merge);
+		]);
 
 		(rpm2cpio() | decomp() | cpio)
 			.log_and_spawn(None)
