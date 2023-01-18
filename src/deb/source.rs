@@ -171,7 +171,11 @@ impl Data {
 			}))
 	}
 	fn unpack(&mut self, dst: &Path) -> std::io::Result<()> {
-		self.0.unpack(dst)
+		// to unpack tar files, apparently we have to rewind first...
+		let mut inner =
+			std::mem::replace(&mut self.0, tar::Archive::new(Cursor::new(vec![]))).into_inner();
+		inner.seek(std::io::SeekFrom::Start(0))?;
+		tar::Archive::new(inner).unpack(dst)
 	}
 }
 
