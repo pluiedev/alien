@@ -40,7 +40,9 @@ fn main() -> Result<()> {
 	Verbosity::set(args.verbosity);
 
 	// Check alien's working environment.
-	if std::fs::write("test", "test").is_err() {
+	if std::fs::write("test", "test").is_ok() {
+		std::fs::remove_file("test")?;
+	} else {
 		bail!("Cannot write to current directory. Try moving to /tmp and re-running alien.");
 	}
 
@@ -103,6 +105,7 @@ fn main() -> Result<()> {
 				}
 
 				let new_file = pkg.build()?;
+
 				if args.deb_args.test {
 					let results = pkg.test(&new_file)?;
 					if !results.is_empty() {
