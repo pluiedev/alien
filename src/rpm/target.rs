@@ -219,15 +219,15 @@ r#"%description
 		// scrap of shell script to make it unextract and run on the fly.
 
 		for script in Script::ALL {
-			let Some(script) = info.scripts.get_mut(&script) else { return; };
+			let Some(script) = info.scripts.get_mut(&script) else { continue; };
 
 			if script.chars().all(char::is_whitespace) {
-				return; // it's blank.
+				continue; // it's blank.
 			}
 
 			if let Some(s) = script.strip_prefix("#!") {
 				if s.trim_start().starts_with("/bin/sh") {
-					return; // looks like a shell script already
+					continue; // looks like a shell script already
 				}
 			}
 			// The original used uuencoding. That is cursed. We don't do that here
