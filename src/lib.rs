@@ -14,7 +14,7 @@ use std::{
 };
 
 use enum_dispatch::enum_dispatch;
-use simple_eyre::eyre::{bail, Result};
+use eyre::{bail, Result};
 use util::Args;
 
 use deb::{DebSource, DebTarget};

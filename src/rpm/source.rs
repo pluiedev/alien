@@ -3,6 +3,7 @@ use std::{
 	path::{Component, Path, PathBuf},
 };
 
+use eyre::{bail, Context, Result};
 use fs_extra::dir::CopyOptions;
 use nix::unistd::{chown, geteuid, Gid, Group, Uid, User};
 use simple_eyre::{

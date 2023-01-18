@@ -10,7 +10,7 @@ use std::{
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 
-use simple_eyre::eyre::{bail, Result};
+use eyre::{bail, Result};
 use subprocess::Exec;
 
 use xz::read::XzDecoder;

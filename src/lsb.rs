@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use simple_eyre::Result;
+use eyre::Result;
 use subprocess::Exec;
 
 use crate::{util::ExecExt, Args};
@@ -9,6 +9,8 @@ use super::{
 	rpm::{RpmSource, RpmTarget},
 	Format, PackageInfo, SourcePackage, TargetPackage,
 };
+
+#[derive(Debug)]
 pub struct LsbSource {
 	rpm: RpmSource,
 }
@@ -68,6 +70,7 @@ impl SourcePackage for LsbSource {
 	fn increment_release(&mut self, _bump: u32) {}
 }
 
+#[derive(Debug)]
 pub struct LsbTarget {
 	rpm: RpmTarget,
 }

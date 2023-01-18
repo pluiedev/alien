@@ -6,10 +6,7 @@ use std::{
 };
 
 use base64::Engine;
-use simple_eyre::{
-	eyre::{bail, Context},
-	Result,
-};
+use eyre::{bail, Context, Result};
 use subprocess::{Exec, Redirection};
 
 use crate::{

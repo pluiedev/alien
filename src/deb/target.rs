@@ -7,6 +7,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 
+use eyre::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use fs_extra::dir::CopyOptions;
 use simple_eyre::eyre::{bail, Context, Result};

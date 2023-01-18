@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use bpaf::{construct, long, Parser};
 use enumflags2::BitFlags;
+use eyre::{bail, Context, Result};
 use once_cell::sync::OnceCell;
 use simple_eyre::eyre::{bail, Context, Result};
 use subprocess::{CaptureData, Exec, NullFile, Pipeline};
