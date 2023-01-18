@@ -503,8 +503,7 @@ Information from the binary package:
 		#[rustfmt::skip]
 		writeln!(
 			file,
-r#"
-#!/usr/bin/make -f
+r#"#!/usr/bin/make -f
 # debian/rules for alien
 
 PACKAGE = $(shell dh_listpackages)
@@ -537,7 +536,7 @@ xargs -0 -r -i cp -a {{}} debian/$(PACKAGE)
 
 
 # This has been known to break on some wacky binaries.
-#   dh_strip
+#	dh_strip
 dh_compress
 {}	dh_fixperms
 dh_makeshlibs
