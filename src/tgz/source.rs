@@ -2,7 +2,7 @@ use std::{
 	collections::HashMap,
 	fmt::Debug,
 	fs::File,
-	io::{Read, Seek, SeekFrom},
+	io::{Read, Seek},
 	path::{Path, PathBuf},
 };
 
@@ -10,7 +10,7 @@ use eyre::Result;
 use subprocess::Exec;
 
 use crate::{
-	util::{make_unpack_work_dir, Args, ExecExt},
+	util::{make_unpack_work_dir, ExecExt},
 	Format, PackageInfo, Script, SourcePackage,
 };
 
@@ -39,7 +39,7 @@ impl TgzSource {
 			_ => false,
 		}
 	}
-	pub fn new(file: PathBuf, _args: &Args) -> Result<Self> {
+	pub fn new(file: PathBuf) -> Result<Self> {
 		let mut basename = if let Some(file_name) = file.file_name() {
 			PathBuf::from(file_name)
 		} else {
@@ -130,7 +130,7 @@ impl SourcePackage for TgzSource {
 	}
 	fn unpack(&mut self) -> Result<PathBuf> {
 		let work_dir = make_unpack_work_dir(&self.info)?;
-		
+
 		self.tar.unpack(&work_dir)?;
 
 		// Delete the install directory that has slackware info in it.

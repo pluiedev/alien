@@ -104,7 +104,7 @@ impl AnySourcePackage {
 		} else if DebSource::check_file(&file) {
 			DebSource::new(file, args).map(Self::Deb)
 		} else if TgzSource::check_file(&file) {
-			TgzSource::new(file, args).map(Self::Tgz)
+			TgzSource::new(file).map(Self::Tgz)
 		} else {
 			bail!("Unknown type of package, {}", file.display());
 		}
