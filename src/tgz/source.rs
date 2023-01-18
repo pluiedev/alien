@@ -110,8 +110,9 @@ impl TgzSource {
 			..Default::default()
 		};
 
+		// Rewind tar to 
 		let mut tar = tar.into_inner();
-		tar.seek(SeekFrom::Start(0))?;
+		tar.rewind()?;
 		let tar = tar::Archive::new(tar);
 
 		Ok(Self { info, tar })
@@ -129,6 +130,7 @@ impl SourcePackage for TgzSource {
 	}
 	fn unpack(&mut self) -> Result<PathBuf> {
 		let work_dir = make_unpack_work_dir(&self.info)?;
+		
 		self.tar.unpack(&work_dir)?;
 
 		// Delete the install directory that has slackware info in it.
