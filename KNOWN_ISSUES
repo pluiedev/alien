@@ -1,7 +1,0 @@
-# Known Issues
-
- - [ ] Names need to be mapped from `.rpm` to `.deb` - in particular, `.deb` package
-       names cannot contain uppercase letters, whereas `.rpm` packages have no such restriction.
-	   
- - [ ] Currently dependencies from `.deb` files are not processed, which means `.rpm`
-	   packages converted from `.deb` packages may not install correctly.
