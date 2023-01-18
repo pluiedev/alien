@@ -10,7 +10,6 @@ use std::{
 use eyre::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use fs_extra::dir::CopyOptions;
-use simple_eyre::eyre::{bail, Context, Result};
 use subprocess::{Exec, Redirection};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 
@@ -58,7 +57,7 @@ impl DebTarget {
 		};
 
 		let debian_dir = unpacked_dir.join("debian");
-		std::fs::create_dir(&debian_dir)?;
+		mkdir(&debian_dir)?;
 
 		// Use a patch file to debianize?
 		if let Some(patch) = &patch_file {
@@ -509,25 +508,25 @@ r#"#!/usr/bin/make -f
 PACKAGE = $(shell dh_listpackages)
 
 build:
-dh_testdir
+	dh_testdir
 
 clean:
-dh_testdir
-dh_testroot
-dh_clean -d
+	dh_testdir
+	dh_testroot
+	dh_clean -d
 
 binary-arch: build
-dh_testdir
-dh_testroot
-dh_prep
-dh_installdirs
+	dh_testdir
+	dh_testroot
+	dh_prep
+	dh_installdirs
 
-dh_installdocs
-dh_installchangelogs
+	dh_installdocs
+	dh_installchangelogs
 
 # Copy the packages' files.
-find . -maxdepth 1 -mindepth 1 -not -name debian -print0 | \
-xargs -0 -r -i cp -a {{}} debian/$(PACKAGE)
+	find . -maxdepth 1 -mindepth 1 -not -name debian -print0 | \
+	xargs -0 -r -i cp -a {{}} debian/$(PACKAGE)
 
 #
 # If you need to move files around in debian/$(PACKAGE) or do some
@@ -537,14 +536,14 @@ xargs -0 -r -i cp -a {{}} debian/$(PACKAGE)
 
 # This has been known to break on some wacky binaries.
 #	dh_strip
-dh_compress
+	dh_compress
 {}	dh_fixperms
-dh_makeshlibs
-dh_installdeb
--dh_shlibdeps
-dh_gencontrol
-dh_md5sums
-dh_builddeb
+	dh_makeshlibs
+	dh_installdeb
+	-dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
 
 binary: binary-indep binary-arch
 .PHONY: build clean binary-indep binary-arch binary
