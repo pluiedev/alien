@@ -84,6 +84,7 @@ pub trait TargetPackage {
 }
 
 #[enum_dispatch(SourcePackage)]
+#[derive(Debug)]
 pub enum AnySourcePackage {
 	Lsb(LsbSource),
 	Rpm(RpmSource),
@@ -106,6 +107,7 @@ impl AnySourcePackage {
 }
 
 #[enum_dispatch(TargetPackage)]
+#[derive(Debug)]
 pub enum AnyTargetPackage {
 	Lsb(LsbTarget),
 	Rpm(RpmTarget),
@@ -131,7 +133,7 @@ impl AnyTargetPackage {
 }
 
 /// Extracted information about a package.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PackageInfo {
 	/// The path to the package.
 	pub file: PathBuf,

@@ -21,6 +21,7 @@ use crate::{
 
 const PATCH_DIRS: &[&str] = &["/var/lib/alien", "/usr/share/alien/patches"];
 
+#[derive(Debug)]
 pub struct DebTarget {
 	info: PackageInfo,
 	unpacked_dir: PathBuf,

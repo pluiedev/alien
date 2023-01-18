@@ -1,7 +1,7 @@
 use std::{
 	borrow::Cow,
 	collections::HashMap,
-	ffi::OsStr,
+	fmt::Debug,
 	fs::File,
 	io::{Cursor, Read},
 	path::{Path, PathBuf},
@@ -102,6 +102,13 @@ impl SourcePackage for DebSource {
 		let work_dir = make_unpack_work_dir(&self.info)?;
 		self.data.unpack(&work_dir)?;
 		Ok(work_dir)
+	}
+}
+impl Debug for DebSource {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("DebSource")
+			.field("info", &self.info)
+			.finish()
 	}
 }
 

@@ -17,6 +17,7 @@ use crate::{
 	Args, {FileInfo, Format, PackageInfo, Script, SourcePackage},
 };
 
+#[derive(Debug)]
 pub struct RpmSource {
 	info: PackageInfo,
 	prefixes: Option<PathBuf>,

@@ -14,6 +14,7 @@ use crate::{
 	PackageInfo, Script, TargetPackage,
 };
 
+#[derive(Debug)]
 pub struct RpmTarget {
 	pub(crate) info: PackageInfo,
 	unpacked_dir: PathBuf,
