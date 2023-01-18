@@ -41,6 +41,8 @@ benefit far outweighs the cost of my time ~~and my sanity~~, and so this project
  - Currently dependencies from `.deb` files are not processed, which means `.rpm`
 	   packages converted from `.deb` packages may not install correctly.
 
+ - You can't install the package yet, and `alien` currently doesn't clean things up.
+
 From the original `alien`'s 8.95 release (which is to my knowledge the latest), on top of which this port is based:
 
  - Handling postinst script when converting to/from .slp packages.
