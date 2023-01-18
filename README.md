@@ -9,10 +9,10 @@ Currently, the tool supports converting between:
  - `.rpm` packages — used by `rpm`, found in Red Hat-derived distros such as RHEL,
    CentOS, openSUSE, Fedora and more;
  - LSB packages — used by Linux Standard Base and are basicaly `.rpm` packages
+ - `.tgz` packages — used by Slackware Linux
 
 More package formats will be added in the future, including three additional formats
 available for the original `alien`: 
- - `.tgz` packages — used by Slackware Linux
  - `.pkg` packages — used by Solaris
  - `.slp` packages — used by Stampede Linux
 

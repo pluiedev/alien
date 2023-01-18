@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms, clippy::pedantic)]
 
-use std::{path::Path, os::unix::prelude::PermissionsExt};
+use std::{os::unix::prelude::PermissionsExt, path::Path};
 
 use alien::{
 	util::{args, Args, Verbosity},
@@ -103,7 +103,7 @@ fn generate(file: &Path, info: &PackageInfo, unpacked: &Path, args: &Args) -> Re
 		// Convert package
 		if args.generate || info.original_format != format {
 			let mut pkg =
-				AnyTargetPackage::new(format, info.clone(), unpacked.to_path_buf(), &args)?;
+				AnyTargetPackage::new(format, info.clone(), unpacked.to_path_buf(), args)?;
 
 			if args.generate {
 				let tree = unpacked.display();

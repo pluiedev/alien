@@ -17,6 +17,7 @@ use std::{
 
 use enum_dispatch::enum_dispatch;
 use eyre::{bail, Result};
+use tgz::{source::TgzSource, target::TgzTarget};
 use util::Args;
 
 use deb::{DebSource, DebTarget};
@@ -26,6 +27,7 @@ use rpm::{RpmSource, RpmTarget};
 pub mod deb;
 pub mod lsb;
 pub mod rpm;
+pub mod tgz;
 pub mod util;
 
 /// A source package that can be unpacked, queried and modified.
@@ -88,6 +90,7 @@ pub enum AnySourcePackage {
 	Lsb(LsbSource),
 	Rpm(RpmSource),
 	Deb(DebSource),
+	Tgz(TgzSource),
 }
 impl AnySourcePackage {
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
@@ -99,6 +102,8 @@ impl AnySourcePackage {
 			RpmSource::new(file, args).map(Self::Rpm)
 		} else if DebSource::check_file(&file) {
 			DebSource::new(file, args).map(Self::Deb)
+		} else if TgzSource::check_file(&file) {
+			TgzSource::new(file, args).map(Self::Tgz)
 		} else {
 			bail!("Unknown type of package, {}", file.display());
 		}
@@ -111,6 +116,7 @@ pub enum AnyTargetPackage {
 	Lsb(LsbTarget),
 	Rpm(RpmTarget),
 	Deb(DebTarget),
+	Tgz(TgzTarget),
 }
 impl AnyTargetPackage {
 	pub fn new(
@@ -125,7 +131,7 @@ impl AnyTargetPackage {
 			Format::Pkg => todo!(),
 			Format::Rpm => Self::Rpm(RpmTarget::new(info, unpacked_dir)?),
 			Format::Slp => todo!(),
-			Format::Tgz => todo!(),
+			Format::Tgz => Self::Tgz(TgzTarget::new(info, unpacked_dir)?),
 		};
 		Ok(target)
 	}
@@ -202,14 +208,14 @@ pub struct FileInfo {
 /// Scripts that may be run in the build process. See [`PackageInfo::scripts`] for more.
 ///
 /// Due to historical reasons, there are many names for these scripts across
-/// different package managers. Here's a table linking all of them:
+/// different package managers. Here's a table linking all of them together:
 ///
-/// | `alien` Name              | Debian-style name | RPM scriptlet name | RPM query key |
-/// |---------------------------|-------------------|--------------------|---------------|
-/// | [`Self::BeforeInstall`]   | `preinst`         | `%pre`             | `%{PREIN}`    |
-/// | [`Self::AfterInstall`]    | `postinst`        | `%post`            | `%{POSTIN}`   |
-/// | [`Self::BeforeUninstall`] | `prerm`           | `%preun`           | `%{PREUN}`    |
-/// | [`Self::AfterInstall`]    | `postrm`          | `%postun`          | `%{POSTUN}`   |
+/// | `alien` name              | Debian-style name | RPM scriptlet name | RPM query key | `tgz` script name |
+/// |---------------------------|-------------------|--------------------|---------------|-------------------|
+/// | [`Self::BeforeInstall`]   | `preinst`         | `%pre`             | `%{PREIN}`    | `predoinst.sh`    |
+/// | [`Self::AfterInstall`]    | `postinst`        | `%post`            | `%{POSTIN}`   | `doinst.sh`       |
+/// | [`Self::BeforeUninstall`] | `prerm`           | `%preun`           | `%{PREUN}`    | `predelete.sh`    |
+/// | [`Self::AfterInstall`]    | `postrm`          | `%postun`          | `%{POSTUN}`   | `delete.sh`       |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Script {
 	/// Script that will be run before install.
@@ -282,6 +288,33 @@ impl Script {
 			Self::AfterInstall => "%post",
 			Self::BeforeUninstall => "%preun",
 			Self::AfterUninstall => "%postun",
+		}
+	}
+	/// Gets a script from its `tgz`-style script name.
+	///
+	/// See the [type-level documentation](Self) for the mapping between
+	/// `tgz`-style script names and [`Script`] variants.
+	#[must_use]
+	pub fn from_tgz_script_name(s: &str) -> Option<Self> {
+		match s {
+			"predoinst.sh" => Some(Self::BeforeInstall),
+			"doinst.sh" => Some(Self::AfterInstall),
+			"predelete.sh" => Some(Self::BeforeUninstall),
+			"delete.sh" => Some(Self::AfterUninstall),
+			_ => None,
+		}
+	}
+	/// Returns the script's `tgz`-style script name.
+	///
+	/// See the [type-level documentation](Self) for the mapping between
+	/// `tgz`-style names and [`Script`] variants.
+	#[must_use]
+	pub fn tgz_script_name(&self) -> &str {
+		match self {
+			Self::BeforeInstall => "predoinst.sh",
+			Self::AfterInstall => "doinst.sh",
+			Self::BeforeUninstall => "predelete.sh",
+			Self::AfterUninstall => "delete.sh",
 		}
 	}
 }

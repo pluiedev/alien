@@ -83,7 +83,7 @@ impl LsbTarget {
 			info.name.insert_str(0, "lsb-");
 		}
 		info.dependencies.push("lsb".into());
-		
+
 		// Always include scripts when generating lsb package.
 		info.use_scripts = true;
 

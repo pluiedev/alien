@@ -1,6 +1,3 @@
-pub mod source;
-pub mod target;
-
 pub use source::DebSource;
 pub use target::DebTarget;
 
@@ -8,6 +5,9 @@ use crate::util::{ExecExt, Verbosity};
 use eyre::Result;
 use std::path::Path;
 use subprocess::Exec;
+
+pub mod source;
+pub mod target;
 
 pub fn install(deb: &Path) -> Result<()> {
 	Exec::cmd("dpkg")
