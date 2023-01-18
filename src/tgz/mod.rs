@@ -1,3 +1,6 @@
+pub use source::TgzSource;
+pub use target::TgzTarget;
+
 use crate::util::ExecExt;
 use eyre::{bail, Context, Result};
 use std::path::Path;

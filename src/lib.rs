@@ -17,18 +17,19 @@ use std::{
 
 use enum_dispatch::enum_dispatch;
 use eyre::{bail, Result};
-use tgz::{source::TgzSource, target::TgzTarget};
 use util::Args;
 
 use deb::{DebSource, DebTarget};
 use lsb::{LsbSource, LsbTarget};
 use rpm::{RpmSource, RpmTarget};
+use tgz::{TgzSource, TgzTarget};
 
 pub mod deb;
 pub mod lsb;
 pub mod rpm;
 pub mod tgz;
 pub mod util;
+pub mod slp;
 
 /// A source package that can be unpacked, queried and modified.
 #[enum_dispatch]
