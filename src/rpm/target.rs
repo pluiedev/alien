@@ -197,10 +197,10 @@ r#"%description
 			cmd = cmd.args(&opt);
 		}
 
-		let spec = format!("{name}-{version}-{release}.spec");
+		cmd = cmd.arg(format!("{name}-{version}-{release}.spec"));
 
 		let cmdline = cmd.to_cmdline_lossy();
-		let out = cmd.arg(&spec).log_and_output_without_checking(None)?;
+		let out = cmd.log_and_output_without_checking(None)?;
 
 		if !out.success() {
 			bail!(
