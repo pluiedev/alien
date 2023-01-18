@@ -55,7 +55,6 @@ impl DebSource {
 				"prerm",
 			],
 		)?;
-		dbg!(&control_files);
 
 		let Some(control) = control_files.remove("control") else {
             bail!("Control file not found!");
@@ -166,9 +165,9 @@ impl Data {
 			.filter_map(|f| f.ok())
 			.filter_map(|f| f.path().map(Cow::into_owned).ok())
 			.map(|s| {
-				std::iter::once(OsStr::new("/"))
-					.chain(s.iter().skip_while(|&x| x == "."))
-					.collect::<PathBuf>()
+				let s = s.to_string_lossy();
+				let s = s.strip_prefix('.').unwrap_or(&s);
+				PathBuf::from(s)
 			}))
 	}
 	fn unpack(&mut self, dst: &Path) -> std::io::Result<()> {
