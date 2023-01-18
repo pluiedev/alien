@@ -59,4 +59,6 @@ From the original `alien`'s 8.95 release (which is to my knowledge the latest), 
 
 ## License
 
-Licensed under [GPLv2](LICENSE). © Leah "pluie" Chen 2023  
+`alien` is licensed under [the GNU General Public License, version 2](LICENSE), or (at your option) any later version.
+
+© 2023 Leah "pluie" Chen
