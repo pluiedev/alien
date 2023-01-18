@@ -11,10 +11,17 @@ Currently, the tool supports converting between:
  - LSB packages — used by Linux Standard Base and are basicaly `.rpm` packages
  - `.tgz` packages — used by Slackware Linux
 
-More package formats will be added in the future, including three additional formats
+More package formats will be added in the future, including one additional format
 available for the original `alien`: 
  - `.pkg` packages — used by Solaris
- - `.slp` packages — used by Stampede Linux
+
+Please note that support for `.slp` packages — once used by Stampede Linux —
+will not be present in the Rust version.
+Due to lack of available documentation online caused by lack of interest in
+Stampede Linux over the last 20 years after its cancellation, and a potential
+endianness mismatch present in original Perl version, I don't have enough
+information or incentive to write a Rust port that functions correctly on
+all architectures.
 
 ## Motivation
 

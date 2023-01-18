@@ -29,7 +29,6 @@ pub mod lsb;
 pub mod rpm;
 pub mod tgz;
 pub mod util;
-pub mod slp;
 
 /// A source package that can be unpacked, queried and modified.
 #[enum_dispatch]
