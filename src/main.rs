@@ -1,9 +1,11 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms, clippy::pedantic)]
 
+use std::{path::Path, os::unix::prelude::PermissionsExt};
+
 use alien::{
-	util::{args, Verbosity},
-	AnySourcePackage, AnyTargetPackage, Format, SourcePackage, TargetPackage,
+	util::{args, Args, Verbosity},
+	AnySourcePackage, AnyTargetPackage, Format, PackageInfo, SourcePackage, TargetPackage,
 };
 
 use bpaf::Parser;
@@ -88,52 +90,83 @@ fn main() -> Result<()> {
 		let unpacked = pkg.unpack()?;
 		let info = pkg.into_info();
 
-		for format in args.formats {
-			// Convert package
-			if args.generate || info.original_format != format {
-				let mut pkg = AnyTargetPackage::new(format, info.clone(), unpacked.clone(), &args)?;
-
-				if args.generate {
-					let tree = unpacked.display();
-					if format == Format::Deb && !args.deb_args.single {
-						println!("Directories {tree} and {tree}.orig prepared.");
-					} else {
-						println!("Directory {tree} prepared.");
-					}
-					// Make sure `package` does not wipe out the
-					// directory when it is destroyed.
-					// unpacked.clear();
-					continue;
-				}
-
-				let new_file = pkg.build()?;
-
-				if args.deb_args.test {
-					let results = pkg.test(&new_file)?;
-					if !results.is_empty() {
-						println!("Test results:");
-						for result in results {
-							println!("\t{result}");
-						}
-					}
-				}
-				if args.install {
-					format.install(&new_file)?;
-					std::fs::remove_file(&new_file)?;
-				} else {
-					// Tell them where the package ended up.
-					println!("{} generated", new_file.display());
-				}
-
-				pkg.clean_tree()?;
-			} else if args.install {
-				// Don't convert the package, but do install it.
-				format.install(file)?;
-				// Note I don't remove it. I figure that might annoy
-				// people, since it was an input file.
-			}
-		}
+		let res = generate(file, &info, &unpacked, &args);
+		cleanup(&unpacked)?;
+		res?;
 	}
 
+	Ok(())
+}
+
+fn generate(file: &Path, info: &PackageInfo, unpacked: &Path, args: &Args) -> Result<()> {
+	for format in args.formats {
+		// Convert package
+		if args.generate || info.original_format != format {
+			let mut pkg =
+				AnyTargetPackage::new(format, info.clone(), unpacked.to_path_buf(), &args)?;
+
+			if args.generate {
+				let tree = unpacked.display();
+				if format == Format::Deb && !args.deb_args.single {
+					println!("Directories {tree} and {tree}.orig prepared.");
+				} else {
+					println!("Directory {tree} prepared.");
+				}
+				// Make sure `package` does not wipe out the
+				// directory when it is destroyed.
+				// unpacked.clear();
+				continue;
+			}
+
+			let new_file = pkg.build()?;
+
+			if args.deb_args.test {
+				let results = pkg.test(&new_file)?;
+				if !results.is_empty() {
+					println!("Test results:");
+					for result in results {
+						println!("\t{result}");
+					}
+				}
+			}
+			if args.install {
+				format.install(&new_file)?;
+				std::fs::remove_file(&new_file)?;
+			} else {
+				// Tell them where the package ended up.
+				println!("{} generated", new_file.display());
+			}
+
+			pkg.clean_tree()?;
+		} else if args.install {
+			// Don't convert the package, but do install it.
+			format.install(file)?;
+			// Note I don't remove it. I figure that might annoy
+			// people, since it was an input file.
+		}
+	}
+	Ok(())
+}
+
+fn cleanup(unpacked: &Path) -> Result<()> {
+	if !unpacked.as_os_str().is_empty() {
+		// This should never happen, but it pays to check.
+		if unpacked.as_os_str() == "/" {
+			bail!("alien internal error: unpacked_tree is set to '/'. Please file a bug report!");
+		}
+		if unpacked.is_dir() {
+			// Just in case some dir perms are too screwed up to remove
+			// and we're not running as root.
+			for path in glob::glob("*").unwrap() {
+				let path = path?;
+				if path.is_dir() {
+					let mut perms = std::fs::metadata(&path)?.permissions();
+					perms.set_mode(0o755);
+					std::fs::set_permissions(&path, perms)?;
+				}
+			}
+			std::fs::remove_dir_all(unpacked)?;
+		}
+	}
 	Ok(())
 }
