@@ -3,7 +3,7 @@ use std::{
 	collections::HashMap,
 	fmt::Debug,
 	fs::File,
-	io::{Cursor, Read},
+	io::{Cursor, Read, Seek},
 	path::{Path, PathBuf},
 };
 
@@ -11,12 +11,12 @@ use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 
 use eyre::{bail, Result};
-use subprocess::Exec;
+use subprocess::{Exec, NullFile};
 
 use xz::read::XzDecoder;
 
 use crate::{
-	util::{make_unpack_work_dir, ExecExt},
+	util::{make_unpack_work_dir, ExecExt, Verbosity},
 	Args, Format, PackageInfo, Script, SourcePackage,
 };
 
