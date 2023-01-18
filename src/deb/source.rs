@@ -112,16 +112,24 @@ impl Debug for DebSource {
 }
 
 //= Utilties
-
 struct Data(tar::Archive<Cursor<Vec<u8>>>);
 
 impl Data {
 	fn new(dpkg_deb: Option<&Path>, deb_file: &Path) -> Result<Self> {
 		let tar = if let Some(dpkg_deb) = dpkg_deb {
+			// HACK(pluie): You can't query subprocess's stdout settings once set,
+			// and we really don't want dpkg-deb spilling bytes from tar files
+			// into readable stdout, so we want to limit the output to commands only,
+			// even in very verbose mode.
+			let mut verbosity = Verbosity::get();
+			if verbosity == Verbosity::VeryVerbose {
+				verbosity = Verbosity::Verbose;
+			}
+
 			Exec::cmd(dpkg_deb)
 				.arg("--fsys-tarfile")
 				.arg(deb_file)
-				.log_and_output(None)?
+				.log_and_output(verbosity)?
 				.stdout
 		} else {
 			// Fallback - perform manual extraction if `dpkg-deb` is not installed.
