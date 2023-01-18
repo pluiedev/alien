@@ -32,7 +32,7 @@ impl RpmSource {
 		let prefixes = rpm.read_field("%{PREFIXES}")?.map(PathBuf::from);
 
 		let conffiles = rpm.read_file_list("-c")?;
-		let file_list = rpm.read_file_list("-l")?;
+		let files = rpm.read_file_list("-l")?;
 		let binary_info = rpm.read("-qip")?;
 
 		// Sanity check and sanitize fields.
@@ -70,10 +70,8 @@ impl RpmSource {
 		let Some(version) = rpm.read_field("%{VERSION}")? else {
 			bail!("Error querying rpm file: version not found!")
 		};
-		let Some(release) = rpm.read_field("%{RELEASE}")?
-			.and_then(|s| s.parse().ok())
-		else {
-			bail!("Error querying rpm file: release not found or invalid!")
+		let Some(release) = rpm.read_field("%{RELEASE}")? else {
+			bail!("Error querying rpm file: release not found!")
 		};
 
 		let mut scripts = HashMap::new();
@@ -94,7 +92,7 @@ impl RpmSource {
 			copyright,
 
 			conffiles,
-			files: file_list,
+			files,
 			binary_info,
 
 			file,
@@ -139,10 +137,10 @@ impl SourcePackage for RpmSource {
 		};
 
 		let cpio = Exec::cmd("cpio").cwd(&work_dir).args(&[
-				"--extract",
-				"--make-directories",
-				"--no-absolute-filenames",
-				"--preserve-modification-time",
+			"--extract",
+			"--make-directories",
+			"--no-absolute-filenames",
+			"--preserve-modification-time",
 		]);
 
 		(rpm2cpio() | decomp() | cpio)
@@ -340,25 +338,25 @@ impl<'r> RpmReader<'r> {
 	}
 	fn map_arch(arch: &str) -> &str {
 		match arch.as_bytes() {
-				// NOTE(pluie): do NOT ask me where these numbers came from.
-				// I have NO clue.
-				b"1" => "i386",
-				b"2" => "alpha",
-				b"3" => "sparc",
-				b"6" => "m68k",
-				b"noarch" => "all",
-				b"ppc" => "powerpc",
-				b"x86_64" | b"em64t" => "amd64",
-				b"armv4l" => "arm",
-				b"armv7l" => "armel",
-				b"parisc" => "hppa",
-				b"ppc64le" => "ppc64el",
+			// NOTE(pluie): do NOT ask me where these numbers came from.
+			// I have NO clue.
+			b"1" => "i386",
+			b"2" => "alpha",
+			b"3" => "sparc",
+			b"6" => "m68k",
+			b"noarch" => "all",
+			b"ppc" => "powerpc",
+			b"x86_64" | b"em64t" => "amd64",
+			b"armv4l" => "arm",
+			b"armv7l" => "armel",
+			b"parisc" => "hppa",
+			b"ppc64le" => "ppc64el",
 
-				// Treat 486, 586, etc, and Pentium, as 386.
-				o if o.eq_ignore_ascii_case(b"pentium") => "i386",
-				&[b'i' | b'I', b'0'..=b'9', b'8', b'6'] => "i386",
+			// Treat 486, 586, etc, and Pentium, as 386.
+			o if o.eq_ignore_ascii_case(b"pentium") => "i386",
+			&[b'i' | b'I', b'0'..=b'9', b'8', b'6'] => "i386",
 
-				_ => arch,
+			_ => arch,
 		}
 	}
 	fn read_file_list(&self, flag: &str) -> Result<Vec<PathBuf>> {
