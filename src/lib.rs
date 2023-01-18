@@ -225,7 +225,7 @@ impl Script {
 	pub const ALL: [Script; 4] = [
 		Self::BeforeInstall,
 		Self::AfterInstall,
-		Self::BeforeInstall,
+		Self::BeforeUninstall,
 		Self::AfterUninstall,
 	];
 

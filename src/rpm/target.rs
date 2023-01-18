@@ -114,7 +114,7 @@ Group: Converted/{group}
 			for script in Script::ALL {
 				let name = script.rpm_scriptlet_name();
 				let Some(script) = scripts.get(&script) else { continue; };
-				write!(spec_file, "%{name}\n{script}\n\n")?;
+				write!(spec_file, "{name}\n{script}\n\n")?;
 			}
 		}
 		#[rustfmt::skip]
