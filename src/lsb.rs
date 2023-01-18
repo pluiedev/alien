@@ -85,6 +85,7 @@ impl LsbTarget {
 		info.dependencies.push("lsb".into());
 		
 		// Always include scripts when generating lsb package.
+		info.use_scripts = true;
 
 		let rpm = RpmTarget::new(info, unpacked_dir)?;
 
