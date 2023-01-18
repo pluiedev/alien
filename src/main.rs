@@ -7,10 +7,19 @@ use alien::{
 };
 
 use bpaf::Parser;
-use simple_eyre::{eyre::bail, Result};
+use eyre::{bail, Result};
+
+#[cfg(debug_assertions)]
+fn eyre() -> Result<()> {
+	color_eyre::install()
+}
+#[cfg(not(debug_assertions))]
+fn eyre() -> Result<()> {
+	simple_eyre::install()
+}
 
 fn main() -> Result<()> {
-	simple_eyre::install()?;
+	eyre()?;
 
 	let args = args()
 		.guard(
