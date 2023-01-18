@@ -1,7 +1,7 @@
 pub use source::TgzSource;
 pub use target::TgzTarget;
 
-use crate::util::ExecExt;
+use crate::util::{ExecExt, Verbosity};
 use eyre::{bail, Context, Result};
 use std::path::Path;
 use subprocess::Exec;
@@ -17,7 +17,7 @@ pub fn install(tgz: &Path) -> Result<()> {
 	if Path::new("/sbin/installpkg").exists() {
 		Exec::cmd("/sbin/installpkg")
 			.arg(tgz)
-			.log_and_spawn(None)
+			.log_and_spawn(Verbosity::VeryVerbose)
 			.wrap_err("Unable to install")
 	} else {
 		bail!("Sorry, I cannot install the generated .tgz file because /sbin/installpkg is not present. You can use tar to install it yourself.")

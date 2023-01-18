@@ -18,6 +18,5 @@ pub fn install(rpm: &Path) -> Result<()> {
 		}
 	}
 
-	cmd.arg(rpm).log_and_output(Verbosity::VeryVerbose)?;
-	Ok(())
+	cmd.arg(rpm).log_and_spawn(Verbosity::VeryVerbose)
 }

@@ -13,8 +13,7 @@ pub fn install(deb: &Path) -> Result<()> {
 	Exec::cmd("dpkg")
 		.args(&["--no-force-overwrite", "-i"])
 		.arg(deb)
-		.log_and_output(Verbosity::VeryVerbose)?;
-	Ok(())
+		.log_and_spawn(Verbosity::VeryVerbose)
 }
 
 fn set_version_and_release(info: &mut super::PackageInfo, version: &str) {

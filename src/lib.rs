@@ -351,7 +351,7 @@ impl Format {
 			Format::Lsb | Format::Rpm => rpm::install(path),
 			Format::Pkg => todo!(),
 			Format::Slp => todo!(),
-			Format::Tgz => todo!(),
+			Format::Tgz => tgz::install(path),
 		}
 	}
 }
