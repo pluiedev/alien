@@ -99,9 +99,6 @@ fn formats() -> impl Parser<BitFlags<Format>> {
 		.short('r')
 		.help("Generate a Red Hat rpm package.")
 		.switch();
-	let to_slp = long("to-slp")
-		.help("Generate a Stampede slp package.")
-		.switch();
 	let to_lsb = long("to-lsb")
 		.short('l')
 		.help("Generate a LSB package.")
@@ -115,14 +112,13 @@ fn formats() -> impl Parser<BitFlags<Format>> {
 		.help("Generate a Solaris pkg package.")
 		.switch();
 
-	construct!(to_deb, to_rpm, to_slp, to_lsb, to_tgz, to_pkg,).map(|(d, r, s, l, t, p)| {
+	construct!(to_deb, to_rpm, to_lsb, to_tgz, to_pkg,).map(|(d, r, l, t, p)| {
 		let mut formats = BitFlags::empty();
 
 		#[rustfmt::skip]
 		let _ = {
 			if d { formats |= Format::Deb; }
 			if r { formats |= Format::Rpm; }
-			if s { formats |= Format::Slp; }
 			if l { formats |= Format::Lsb; }
 			if t { formats |= Format::Tgz; }
 			if p { formats |= Format::Pkg; }
@@ -180,7 +176,11 @@ pub(crate) trait ExecExt {
 	type Output;
 
 	fn log_and_spawn(self, verbosity: impl Into<Option<Verbosity>>) -> Result<()>;
+
+	#[must_use = "Use `log_and_spawn` if you just want to spawn a command and forget about it"]
 	fn log_and_output(self, verbosity: impl Into<Option<Verbosity>>) -> Result<CaptureData>;
+
+	#[must_use = "Use `log_and_spawn` if you just want to spawn a command and forget about it"]
 	fn log_and_output_without_checking(
 		self,
 		verbosity: impl Into<Option<Verbosity>>,

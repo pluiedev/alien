@@ -48,9 +48,7 @@ impl TgzSource {
 		basename.set_extension("");
 		let basename = basename.to_string_lossy();
 
-		let (name, version) = basename
-			.rsplit_once('-')
-			.unwrap_or_else(|| (&basename, "1"));
+		let (name, version) = basename.rsplit_once('-').unwrap_or((&basename, "1"));
 		let (name, version) = (name.to_owned(), version.to_owned());
 
 		let binary_info = Exec::cmd("ls")
@@ -110,7 +108,7 @@ impl TgzSource {
 			..Default::default()
 		};
 
-		// Rewind tar to 
+		// Rewind tar to
 		let mut tar = tar.into_inner();
 		tar.rewind()?;
 		let tar = tar::Archive::new(tar);

@@ -10,9 +10,6 @@ Currently, the tool supports converting between:
    CentOS, openSUSE, Fedora and more;
  - LSB packages — used by Linux Standard Base and are basicaly `.rpm` packages
  - `.tgz` packages — used by Slackware Linux
-
-More package formats will be added in the future, including one additional format
-available for the original `alien`: 
  - `.pkg` packages — used by Solaris
 
 Please note that support for `.slp` packages — once used by Stampede Linux —

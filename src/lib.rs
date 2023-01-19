@@ -17,6 +17,7 @@ use std::{
 
 use enum_dispatch::enum_dispatch;
 use eyre::{bail, Result};
+use pkg::{PkgSource, PkgTarget};
 use util::Args;
 
 use deb::{DebSource, DebTarget};
@@ -26,6 +27,7 @@ use tgz::{TgzSource, TgzTarget};
 
 pub mod deb;
 pub mod lsb;
+pub mod pkg;
 pub mod rpm;
 pub mod tgz;
 pub mod util;
@@ -91,11 +93,10 @@ pub enum AnySourcePackage {
 	Rpm(RpmSource),
 	Deb(DebSource),
 	Tgz(TgzSource),
+	Pkg(PkgSource),
 }
 impl AnySourcePackage {
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
-		// lsb > rpm > deb > tgz > slp > pkg
-
 		if LsbSource::check_file(&file) {
 			LsbSource::new(file, args).map(Self::Lsb)
 		} else if RpmSource::check_file(&file) {
@@ -104,6 +105,8 @@ impl AnySourcePackage {
 			DebSource::new(file, args).map(Self::Deb)
 		} else if TgzSource::check_file(&file) {
 			TgzSource::new(file).map(Self::Tgz)
+		} else if PkgSource::check_file(&file) {
+			PkgSource::new(file).map(Self::Pkg)
 		} else {
 			bail!("Unknown type of package, {}", file.display());
 		}
@@ -117,6 +120,7 @@ pub enum AnyTargetPackage {
 	Rpm(RpmTarget),
 	Deb(DebTarget),
 	Tgz(TgzTarget),
+	Pkg(PkgTarget),
 }
 impl AnyTargetPackage {
 	pub fn new(
@@ -126,12 +130,11 @@ impl AnyTargetPackage {
 		args: &Args,
 	) -> Result<Self> {
 		let target = match format {
-			Format::Deb => Self::Deb(DebTarget::new(info, unpacked_dir, args)?),
 			Format::Lsb => Self::Lsb(LsbTarget::new(info, unpacked_dir)?),
-			Format::Pkg => todo!(),
 			Format::Rpm => Self::Rpm(RpmTarget::new(info, unpacked_dir)?),
-			Format::Slp => todo!(),
+			Format::Deb => Self::Deb(DebTarget::new(info, unpacked_dir, args)?),
 			Format::Tgz => Self::Tgz(TgzTarget::new(info, unpacked_dir)?),
+			Format::Pkg => Self::Pkg(PkgTarget::new(info, unpacked_dir)?),
 		};
 		Ok(target)
 	}
@@ -210,12 +213,12 @@ pub struct FileInfo {
 /// Due to historical reasons, there are many names for these scripts across
 /// different package managers. Here's a table linking all of them together:
 ///
-/// | `alien` name              | Debian-style name | RPM scriptlet name | RPM query key | `tgz` script name |
-/// |---------------------------|-------------------|--------------------|---------------|-------------------|
-/// | [`Self::BeforeInstall`]   | `preinst`         | `%pre`             | `%{PREIN}`    | `predoinst.sh`    |
-/// | [`Self::AfterInstall`]    | `postinst`        | `%post`            | `%{POSTIN}`   | `doinst.sh`       |
-/// | [`Self::BeforeUninstall`] | `prerm`           | `%preun`           | `%{PREUN}`    | `predelete.sh`    |
-/// | [`Self::AfterInstall`]    | `postrm`          | `%postun`          | `%{POSTUN}`   | `delete.sh`       |
+/// | `alien` name              | Debian-style name | RPM scriptlet name | RPM query key | `tgz` script name | `pkg` script name |
+/// |---------------------------|-------------------|--------------------|---------------|-------------------|-------------------|
+/// | [`Self::BeforeInstall`]   | `preinst`         | `%pre`             | `%{PREIN}`    | `predoinst.sh`    | `preinstall`      |
+/// | [`Self::AfterInstall`]    | `postinst`        | `%post`            | `%{POSTIN}`   | `doinst.sh`       | `postinstall`     |
+/// | [`Self::BeforeUninstall`] | `prerm`           | `%preun`           | `%{PREUN}`    | `predelete.sh`    | `preremove`       |
+/// | [`Self::AfterInstall`]    | `postrm`          | `%postun`          | `%{POSTUN}`   | `delete.sh`       | `postremove`      |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Script {
 	/// Script that will be run before install.
@@ -317,6 +320,33 @@ impl Script {
 			Self::AfterUninstall => "delete.sh",
 		}
 	}
+	/// Gets a script from its `pkg`-style script name.
+	///
+	/// See the [type-level documentation](Self) for the mapping between
+	/// `pkg`-style script names and [`Script`] variants.
+	#[must_use]
+	pub fn from_pkg_script_name(s: &str) -> Option<Self> {
+		match s {
+			"preinstall" => Some(Self::BeforeInstall),
+			"postinstall" => Some(Self::AfterInstall),
+			"preremove" => Some(Self::BeforeUninstall),
+			"postremove" => Some(Self::AfterUninstall),
+			_ => None,
+		}
+	}
+	/// Returns the script's `pkg`-style script name.
+	///
+	/// See the [type-level documentation](Self) for the mapping between
+	/// `pkg`-style script names and [`Script`] variants.
+	#[must_use]
+	pub fn pkg_script_name(&self) -> &str {
+		match self {
+			Self::BeforeInstall => "preinstall",
+			Self::AfterInstall => "postinstall",
+			Self::BeforeUninstall => "preremove",
+			Self::AfterUninstall => "postremove",
+		}
+	}
 }
 
 /// Format of a package.
@@ -338,8 +368,6 @@ pub enum Format {
 	/// on many distributions derived from Red Hat Linux,
 	/// including RHEL, CentOS, openSUSE, Fedora, and more.
 	Rpm,
-	/// The `.slp` format, used by Stampede Linux.
-	Slp,
 	/// The `.tgz` format, used by Slackware.
 	Tgz,
 }
@@ -348,8 +376,7 @@ impl Format {
 		match self {
 			Format::Deb => deb::install(path),
 			Format::Lsb | Format::Rpm => rpm::install(path),
-			Format::Pkg => todo!(),
-			Format::Slp => todo!(),
+			Format::Pkg => pkg::install(path),
 			Format::Tgz => tgz::install(path),
 		}
 	}
@@ -361,7 +388,6 @@ impl Display for Format {
 			Format::Lsb => "lsb",
 			Format::Pkg => "pkg",
 			Format::Rpm => "rpm",
-			Format::Slp => "slp",
 			Format::Tgz => "tgz",
 		})
 	}
