@@ -94,36 +94,26 @@ fn formats() -> impl Parser<BitFlags<Format>> {
 	let to_deb = long("to-deb")
 		.short('d')
 		.help("Generate a Debian deb package (default).")
-		.switch();
+		.flag(BitFlags::from(Format::Deb), BitFlags::empty());
 	let to_rpm = long("to-rpm")
 		.short('r')
 		.help("Generate a Red Hat rpm package.")
-		.switch();
+		.flag(BitFlags::from(Format::Rpm), BitFlags::empty());
 	let to_lsb = long("to-lsb")
 		.short('l')
 		.help("Generate a LSB package.")
-		.switch();
+		.flag(BitFlags::from(Format::Lsb), BitFlags::empty());
 	let to_tgz = long("to-tgz")
 		.short('t')
 		.help("Generate a Slackware tgz package.")
-		.switch();
+		.flag(BitFlags::from(Format::Tgz), BitFlags::empty());
 	let to_pkg = long("to-pkg")
 		.short('p')
 		.help("Generate a Solaris pkg package.")
-		.switch();
+		.flag(BitFlags::from(Format::Pkg), BitFlags::empty());
 
 	construct!(to_deb, to_rpm, to_lsb, to_tgz, to_pkg,).map(|(d, r, l, t, p)| {
-		let mut formats = BitFlags::empty();
-
-		#[rustfmt::skip]
-		let _ = {
-			if d { formats |= Format::Deb; }
-			if r { formats |= Format::Rpm; }
-			if l { formats |= Format::Lsb; }
-			if t { formats |= Format::Tgz; }
-			if p { formats |= Format::Pkg; }
-		};
-
+		let mut formats = d | r | l | t | p;
 		if formats.is_empty() {
 			// Default to deb
 			formats |= Format::Deb;
