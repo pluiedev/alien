@@ -348,7 +348,7 @@ impl DebWriter {
 			changelog: changelog_text,
 			..
 		} = info;
-
+		
 		dir.push("changelog");
 		let mut file = File::create(&dir)?;
 

@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
-use subprocess::Exec;
 
-use crate::{util::ExecExt, Args};
+use crate::{rpm::source::RpmReader, Args};
 
 use super::{
 	rpm::{RpmSource, RpmTarget},
@@ -26,18 +25,15 @@ impl LsbSource {
 		if !stem.starts_with("lsb-") {
 			return false;
 		}
-		let Some(ext) = file.extension() else {
-			return false;
-		};
-		if ext != "rpm" {
+		if !RpmSource::check_file(file) {
 			return false;
 		}
 
-		let Ok(deps) = Exec::cmd("rpm").env("LANG", "C").arg("-qRp").arg(file).log_and_output(None) else {
+		let Ok(deps) = RpmReader::new(file).query("-R") else {
 			return false;
 		};
 
-		deps.stdout_str().lines().any(|s| s.trim() == "lsb")
+		deps.lines().any(|s| s.trim() == "lsb")
 	}
 	pub fn new(lsb_file: PathBuf, args: &Args) -> Result<Self> {
 		let mut rpm = RpmSource::new(lsb_file, args)?;

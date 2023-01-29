@@ -27,10 +27,8 @@ pub struct DebSource {
 impl DebSource {
 	#[must_use]
 	pub fn check_file(file: &Path) -> bool {
-		match file.extension() {
-			Some(o) => o.eq_ignore_ascii_case("deb"),
-			None => false,
-		}
+		file.extension()
+			.map_or(false, |o| o.eq_ignore_ascii_case("deb"))
 	}
 
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
@@ -136,32 +134,33 @@ impl Data {
 
 			let mut tar = vec![];
 			let mut ar = ar::Archive::new(File::open(deb_file)?);
+
 			while let Some(entry) = ar.next_entry() {
 				let mut entry = entry?;
 				let id = entry.header().identifier();
 
-				if !id.starts_with(b"data.tar") {
-					continue;
-				}
-				match id {
-					b"data.tar.gz" => GzDecoder::new(entry).read_to_end(&mut tar).unwrap(),
-					b"data.tar.bz2" => BzDecoder::new(entry).read_to_end(&mut tar).unwrap(),
-					b"data.tar.xz" | b"data.tar.lzma" => {
-						XzDecoder::new(entry).read_to_end(&mut tar).unwrap()
-					}
-					// it's already a tarball
-					b"data.tar" => entry.read_to_end(&mut tar).unwrap(),
-					_ => bail!("Unknown data member!"),
+				if let Some(ext) = id.strip_prefix(b"data.tar") {
+					match ext {
+						b".gz" => GzDecoder::new(entry).read_to_end(&mut tar)?,
+						b".bz2" => BzDecoder::new(entry).read_to_end(&mut tar)?,
+						b".xz" | b".lzma" => XzDecoder::new(entry).read_to_end(&mut tar)?,
+						// it's already a tarball
+						b"" => entry.read_to_end(&mut tar)?,
+						_ => bail!("Unknown data member!"),
+					};
+					break;
 				};
-				break;
 			}
+
 			if tar.is_empty() {
 				bail!("Cannot find data member!");
 			}
 			tar
 		};
 
-		Ok(Self(tar::Archive::new(Cursor::new(tar))))
+		let tar = tar::Archive::new(Cursor::new(tar));
+
+		Ok(Self(tar))
 	}
 
 	// In the tar file, the files are all prefixed with "./", but we want them
@@ -218,17 +217,17 @@ fn fetch_control_files(
 			let mut entry = entry?;
 			let id = entry.header().identifier();
 
-			if !id.starts_with(b"control.tar") {
-				continue;
-			}
-
 			// Load the control tar file, applying gzip/xz decompression if necessary.
+			let Some(ext) = id.strip_prefix(b"control.tar") else {
+				continue;
+			};
+
 			let mut tar = vec![];
-			match id {
-				b"control.tar.gz" => GzDecoder::new(entry).read_to_end(&mut tar).unwrap(),
-				b"control.tar.xz" => XzDecoder::new(entry).read_to_end(&mut tar).unwrap(),
+			match ext {
+				b".gz" => GzDecoder::new(entry).read_to_end(&mut tar)?,
+				b".xz" => XzDecoder::new(entry).read_to_end(&mut tar)?,
 				// it's already a tarball
-				b"control.tar" => entry.read_to_end(&mut tar).unwrap(),
+				b"" => entry.read_to_end(&mut tar)?,
 				_ => bail!("Unknown control member!"),
 			};
 
@@ -267,8 +266,8 @@ fn read_control(info: &mut PackageInfo, control: &str) {
 			let c = c.trim_start();
 			if c != "." {
 				info.description.push_str(c);
-				info.description.push('\n');
 			}
+			info.description.push('\n');
 		} else if let Some((f, value)) = c.split_once(':') {
 			let value = value.trim().to_owned();
 			// Really old debs might have oddly capitalized field names.

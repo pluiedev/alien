@@ -63,12 +63,16 @@ impl PkgSource {
 			binary_info: "unknown".into(), // FIXME
 			..Default::default()
 		};
-		
+
 		reader.read_pkg_info(&mut info)?;
 		reader.read_pkg_map(&mut info)?;
 		reader.cleanup()?;
 
-		let PkgReader { file, pkg_dir, pkgname } = reader;
+		let PkgReader {
+			file,
+			pkg_dir,
+			pkgname,
+		} = reader;
 		info.file = file;
 
 		Ok(Self {
@@ -139,9 +143,13 @@ impl PkgReader {
 			.arg(&pkgname)
 			.log_and_spawn(None)
 			.wrap_err("Error running pkgtrans")?;
-		
+
 		tdir.push(&pkgname);
-		Ok(Self { file, pkg_dir: tdir, pkgname })
+		Ok(Self {
+			file,
+			pkg_dir: tdir,
+			pkgname,
+		})
 	}
 	fn read_copyright(&mut self) -> Result<String> {
 		self.pkg_dir.push("copyright");
@@ -213,7 +221,8 @@ impl PkgReader {
 				"f" | "d" => info.files.push(PathBuf::from(path)),
 				"i" => {
 					let Some(script) = Script::from_pkg_script_name(path) else { continue; };
-					info.scripts.insert(script, std::fs::read_to_string(self.file.join(path))?);
+					info.scripts
+						.insert(script, std::fs::read_to_string(self.file.join(path))?);
 				}
 				_ => {}
 			}

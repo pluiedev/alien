@@ -14,14 +14,15 @@ pub struct TgzTarget {
 }
 impl TgzTarget {
 	pub fn new(info: PackageInfo, unpacked_dir: PathBuf) -> Result<Self> {
-		let mut created_install_folder = false;
 		if info.use_scripts {
+			let mut out = unpacked_dir.join("install");
+			let mut created_install_folder = false;
+
 			for (script, data) in &info.scripts {
 				if data.chars().all(char::is_whitespace) {
 					continue;
 				}
 
-				let mut out = unpacked_dir.join("install");
 				if !created_install_folder {
 					mkdir(&out)?;
 					chmod(&out, 0o755)?;

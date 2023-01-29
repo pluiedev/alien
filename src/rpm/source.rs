@@ -21,25 +21,23 @@ pub struct RpmSource {
 impl RpmSource {
 	#[must_use]
 	pub fn check_file(file: &Path) -> bool {
-		match file.extension() {
-			Some(o) => o.eq_ignore_ascii_case("rpm"),
-			None => false,
-		}
+		file.extension()
+			.map_or(false, |o| o.eq_ignore_ascii_case("rpm"))
 	}
 	pub fn new(file: PathBuf, args: &Args) -> Result<Self> {
 		let rpm = RpmReader::new(&file);
 
-		let prefixes = rpm.read_field("%{PREFIXES}")?.map(PathBuf::from);
+		let prefixes = rpm.query_field("%{PREFIXES}")?.map(PathBuf::from);
 
-		let conffiles = rpm.read_file_list("-c")?;
-		let files = rpm.read_file_list("-l")?;
-		let binary_info = rpm.read("-qip")?;
+		let conffiles = rpm.query_file_list("-c")?;
+		let files = rpm.query_file_list("-l")?;
+		let binary_info = rpm.query("-i")?;
 
 		// Sanity check and sanitize fields.
 
-		let description = rpm.read_field("%{DESCRIPTION}")?;
+		let description = rpm.query_field("%{DESCRIPTION}")?;
 
-		let summary = if let Some(summary) = rpm.read_field("%{SUMMARY}")? {
+		let summary = if let Some(summary) = rpm.query_field("%{SUMMARY}")? {
 			summary
 		} else {
 			// Older rpms will have no summary, but will have a description.
@@ -57,26 +55,26 @@ impl RpmSource {
 		let description = description.unwrap_or_else(|| summary.clone());
 
 		// Older rpms have no license tag, but have a copyright.
-		let copyright = match rpm.read_field("%{LICENSE}")? {
+		let copyright = match rpm.query_field("%{LICENSE}")? {
 			Some(o) => o,
 			None => rpm
-				.read_field("%{COPYRIGHT}")?
+				.query_field("%{COPYRIGHT}")?
 				.unwrap_or_else(|| "unknown".into()),
 		};
 
-		let Some(name) = rpm.read_field("%{NAME}")? else {
+		let Some(name) = rpm.query_field("%{NAME}")? else {
 			bail!("Error querying rpm file: name not found!")
 		};
-		let Some(version) = rpm.read_field("%{VERSION}")? else {
+		let Some(version) = rpm.query_field("%{VERSION}")? else {
 			bail!("Error querying rpm file: version not found!")
 		};
-		let Some(release) = rpm.read_field("%{RELEASE}")? else {
+		let Some(release) = rpm.query_field("%{RELEASE}")? else {
 			bail!("Error querying rpm file: release not found!")
 		};
 
 		let mut scripts = HashMap::new();
 		for script in Script::ALL {
-			let field = rpm.read_field(script.rpm_query_key())?;
+			let field = rpm.query_field(script.rpm_query_key())?;
 			scripts.insert(script, sanitize_script(&prefixes, field));
 		}
 
@@ -84,8 +82,8 @@ impl RpmSource {
 			name,
 			version,
 			release,
-			arch: rpm.read_arch(args.target.as_deref())?,
-			changelog: rpm.read_field("%{CHANGELOGTEXT}")?.unwrap_or_default(),
+			arch: rpm.query_arch(args.target.as_deref())?,
+			changelog: rpm.query_field("%{CHANGELOGTEXT}")?.unwrap_or_default(),
 			summary,
 			description,
 			scripts,
@@ -298,45 +296,68 @@ impl SourcePackage for RpmSource {
 }
 
 //= Utilities
-struct RpmReader<'r> {
+pub trait QueryModifier {
+	fn modify_query(self, exec: Exec) -> Exec;
+}
+
+impl QueryModifier for &'_ str {
+	fn modify_query(self, exec: Exec) -> Exec {
+		exec.arg(self)
+	}
+}
+
+impl<F> QueryModifier for F
+where
+	F: FnOnce(Exec) -> Exec,
+{
+	fn modify_query(self, exec: Exec) -> Exec {
+		self(exec)
+	}
+}
+
+pub(crate) struct RpmReader<'r> {
 	file: &'r Path,
 }
 impl<'r> RpmReader<'r> {
-	fn new(file: &'r Path) -> Self {
+	pub fn new(file: &'r Path) -> Self {
 		Self { file }
 	}
-
-	fn rpm() -> Exec {
-		Exec::cmd("rpm").env("LANG", "C")
+	pub fn query(&self, flag: &str) -> Result<String> {
+		self.query_with(|e| e.arg(flag))
 	}
+	pub fn query_with(&self, modifier: impl FnOnce(Exec) -> Exec) -> Result<String> {
+		let exec = Exec::cmd("rpm").env("LANG", "C").arg("-qp");
+		let exec = modifier(exec);
 
-	fn read(&self, flags: &str) -> Result<String> {
-		Ok(Self::rpm()
-			.arg(flags)
-			.arg(self.file)
-			.log_and_output(None)?
-			.stdout_str())
+		Ok(exec.arg(self.file).log_and_output(None)?.stdout_str())
 	}
-	fn read_field(&self, name: &str) -> Result<Option<String>> {
-		let res = Self::rpm()
-			.arg("-qp")
-			.arg("--queryformat")
-			.arg(name)
-			.arg(self.file)
-			.log_and_output(None)?
-			.stdout_str();
+	pub fn query_file_list(&self, flag: &str) -> Result<Vec<PathBuf>> {
+		let mut files: Vec<_> = self
+			.query(flag)?
+			.lines()
+			.map(|s| PathBuf::from(s.trim()))
+			.collect();
+		if let Some(f) = files.first() {
+			if f.as_os_str() == "(contains no files)" {
+				files.clear();
+			}
+		}
+		Ok(files)
+	}
+	pub fn query_field(&self, name: &str) -> Result<Option<String>> {
+		let res = self.query_with(|e| e.arg("--queryformat").arg(name))?;
 
 		Ok(if res == "(none)" { None } else { Some(res) })
 	}
-	fn read_arch(&self, target: Option<&str>) -> Result<String> {
+	pub fn query_arch(&self, target: Option<&str>) -> Result<String> {
 		if let Some(arch) = target {
 			Ok(Self::map_arch(arch).to_owned())
 		} else {
-			let arch = self.read_field("%{ARCH}")?.unwrap_or_default();
+			let arch = self.query_field("%{ARCH}")?.unwrap_or_default();
 			Ok(Self::map_arch(&arch).to_owned())
 		}
 	}
-	fn map_arch(arch: &str) -> &str {
+	pub fn map_arch(arch: &str) -> &str {
 		match arch.as_bytes() {
 			// NOTE(pluie): do NOT ask me where these numbers came from.
 			// I have NO clue.
@@ -358,23 +379,6 @@ impl<'r> RpmReader<'r> {
 
 			_ => arch,
 		}
-	}
-	fn read_file_list(&self, flag: &str) -> Result<Vec<PathBuf>> {
-		let mut files: Vec<_> = Self::rpm()
-			.arg("-qp")
-			.arg(flag)
-			.arg(self.file)
-			.log_and_output(None)?
-			.stdout_str()
-			.lines()
-			.map(|s| PathBuf::from(s.trim()))
-			.collect();
-		if let Some(f) = files.first() {
-			if f.as_os_str() == "(contains no files)" {
-				files.clear();
-			}
-		}
-		Ok(files)
 	}
 }
 
