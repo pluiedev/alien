@@ -24,8 +24,32 @@ fn set_version_and_release(info: &mut super::PackageInfo, version: &str) {
 	};
 
 	// Ignore epochs.
-	let version = version.split_once(':').map_or(version, |t| t.1);
+	let version = version
+		.split_once(':')
+		.map_or(version, |(_epoch, version)| version);
 
 	info.version = version.to_owned();
 	info.release = release.to_owned();
+}
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	fn test_set_version_and_release() {
+		let mut info = crate::PackageInfo::default();
+
+		super::set_version_and_release(&mut info, "1.0.0");
+		assert_eq!(info.version, "1.0.0");
+		assert_eq!(info.release, "1");
+
+		// With revision
+		super::set_version_and_release(&mut info, "1.0.0-2");
+		assert_eq!(info.version, "1.0.0");
+		assert_eq!(info.release, "2");
+
+		// With epoch
+		super::set_version_and_release(&mut info, "3:1.0.0-2");
+		assert_eq!(info.version, "1.0.0");
+		assert_eq!(info.release, "2");
+	}
 }

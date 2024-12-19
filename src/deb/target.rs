@@ -187,7 +187,7 @@ impl DebTarget {
 		// Release
 		// Make sure the release contains digits.
 		if info.release.parse::<u32>().is_err() {
-			info.release.push_str("-1");
+			info.release.push_str("1");
 		}
 
 		// Description
@@ -348,7 +348,7 @@ impl DebWriter {
 			changelog: changelog_text,
 			..
 		} = info;
-		
+
 		dir.push("changelog");
 		let mut file = File::create(&dir)?;
 
