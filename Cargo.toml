@@ -26,6 +26,7 @@ time = { version = "0.3", features = ["local-offset", "formatting"] }
 which = "7.0"
 whoami = "1.5"
 liblzma = "0.3"
+tempfile = "3.14.0"
 
 [profile.release]
 strip = true
