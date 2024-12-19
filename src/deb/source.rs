@@ -13,7 +13,7 @@ use flate2::read::GzDecoder;
 use eyre::{bail, Result};
 use subprocess::{Exec, NullFile};
 
-use xz::read::XzDecoder;
+use liblzma::read::XzDecoder;
 
 use crate::{
 	util::{make_unpack_work_dir, ExecExt, Verbosity},
@@ -55,8 +55,8 @@ impl DebSource {
 		)?;
 
 		let Some(control) = control_files.remove("control") else {
-            bail!("Control file not found!");
-        };
+			bail!("Control file not found!");
+		};
 		read_control(&mut info, &control);
 
 		info.copyright = format!("see /usr/share/doc/{}/copyright", info.name);
@@ -241,8 +241,12 @@ fn fetch_control_files(
 				let mut entry = entry?;
 
 				// if-let-chains stable when
-				let Ok(path) = entry.path() else { continue; };
-				let Some(name) = path.file_name() else { continue; };
+				let Ok(path) = entry.path() else {
+					continue;
+				};
+				let Some(name) = path.file_name() else {
+					continue;
+				};
 
 				if let Some(cf) = control_files.iter().find(|&&s| s == name) {
 					let mut data = String::new();

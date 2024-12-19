@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use bpaf::{construct, long, Parser};
 use enumflags2::BitFlags;
 use eyre::{bail, Context, Result};
-use once_cell::sync::OnceCell;
 use subprocess::{CaptureData, Exec, NullFile, Pipeline, Redirection};
 
 use crate::{Format, PackageInfo};
@@ -11,6 +10,7 @@ use crate::{Format, PackageInfo};
 use std::{
 	os::unix::prelude::PermissionsExt,
 	path::{Path, PathBuf},
+	sync::OnceLock,
 };
 
 #[allow(clippy::struct_excessive_bools)]
@@ -160,7 +160,7 @@ impl Verbosity {
 		*VERBOSITY.get().unwrap()
 	}
 }
-static VERBOSITY: OnceCell<Verbosity> = OnceCell::new();
+static VERBOSITY: OnceLock<Verbosity> = OnceLock::new();
 
 pub(crate) trait ExecExt {
 	type Output;
@@ -325,8 +325,10 @@ pub(crate) fn fetch_email_address() -> String {
 	if let Ok(email) = std::env::var("EMAIL") {
 		email
 	} else {
-		let mailname =
-			std::fs::read_to_string("/etc/mailname").unwrap_or_else(|_| whoami::hostname());
+		let mailname = std::fs::read_to_string("/etc/mailname")
+			.or_else(|_| whoami::fallible::hostname())
+			.unwrap_or("<unknown>".to_owned());
+
 		let username = whoami::username();
 		format!("{username}@{mailname}")
 	}
