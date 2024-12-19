@@ -9,10 +9,10 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        default = alien;
+        default = xenomorph;
 
-        alien = pkgs.buildRustPackage {
-          pname = "alien";
+        xenomorph = pkgs.buildRustPackage {
+          pname = "xenomorph";
           version = "0.1.0";
         };
       });

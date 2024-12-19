@@ -36,9 +36,10 @@ impl PkgSource {
 		line.contains("# PaCkAgE DaTaStReAm")
 	}
 	pub fn new(file: PathBuf) -> Result<Self> {
+		// FIXME: Bad. Not everyone follows FHS.
 		for tool in ["/usr/bin/pkginfo", "/usr/bin/pkgtrans"] {
 			if !Path::new(tool).exists() {
-				bail!("`alien` needs {tool} to run!");
+				bail!("`xenomorph` needs {tool} to run!");
 			}
 		}
 
@@ -207,10 +208,18 @@ impl PkgReader {
 		let file_list = std::fs::read_to_string(&self.pkg_dir)?;
 		for f in file_list.lines() {
 			let mut split = f.split(' ');
-			let Some("1") = split.next() else { continue; };
-			let Some(ftype @ ("f" | "d" | "i")) = split.next() else { continue; };
-			let Some(_) = split.next() else { continue; };
-			let Some(path) = split.next() else { continue; };
+			let Some("1") = split.next() else {
+				continue;
+			};
+			let Some(ftype @ ("f" | "d" | "i")) = split.next() else {
+				continue;
+			};
+			let Some(_) = split.next() else {
+				continue;
+			};
+			let Some(path) = split.next() else {
+				continue;
+			};
 
 			match ftype {
 				"f" if path.starts_with("etc/") => {
@@ -220,7 +229,9 @@ impl PkgReader {
 				}
 				"f" | "d" => info.files.push(PathBuf::from(path)),
 				"i" => {
-					let Some(script) = Script::from_pkg_script_name(path) else { continue; };
+					let Some(script) = Script::from_pkg_script_name(path) else {
+						continue;
+					};
 					info.scripts
 						.insert(script, std::fs::read_to_string(self.file.join(path))?);
 				}

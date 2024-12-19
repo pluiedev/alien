@@ -1,7 +1,7 @@
-# `alien`
+# `xenomorph` —  Shapeshift between package formats
 
-A Rust port of [`alien`](https://sourceforge.net/projects/alien-pkg-convert/),
-a tool that converts software packages to work from one package manager to the next.
+A tool that converts software packages to work from one package manager to the next,
+originating as a rewrite of the classic [`alien`](https://sourceforge.net/projects/alien-pkg-convert/) script.
 
 Currently, the tool supports converting between:
  - `.deb` packages — used by `dpkg`, prevalent in Linux distributions (distros)
@@ -12,30 +12,18 @@ Currently, the tool supports converting between:
  - `.tgz` packages — used by Slackware Linux
  - `.pkg` packages — used by Solaris
 
-Please note that support for `.slp` packages — once used by Stampede Linux —
-will not be present in the Rust version.
-Due to lack of available documentation online caused by lack of interest in
-Stampede Linux over the last 20 years after its cancellation, and a potential
-endianness mismatch present in original Perl version, I don't have enough
-information or incentive to write a Rust port that functions correctly on
-all architectures.
+## How is `xenomorph` different from `alien`?
 
-## Motivation
+`xenomorph` is written in Rust and therefore does not rely on a Perl interpreter in order to function,
+and can attain native level speeds comparable to tools written in other native languages.
+It also has far more robust error handling and avoids many silent failure states that `alien` can face,
+as well as a much more extensible and well-documented framework for other packaging formats.
 
-The main goal for this port is to enhance the original `alien`'s performance,
-error handling and versatility, which were all hindered by the language `alien` was
-originally written in, Perl. With Rust, there are a lot more opportunities for
-offering the end user parallel processing, more robust error messages, and potentially
-portability to other operating systems.
-
-Code-wise, the original `alien`'s control flow was not entirely clear, and sometimes
-the program does duplicate work thanks to the use of implicit but overridable accessors.
-In comparison, the Rust version minimizes duplicate work, cleanly seperates source packages
-and target packages for better readability and comprehension, and overall the code is just
-laid out more explicitly which helps users and developers to better debug problems.
-
-In conclusion, I believe rewriting `alien` in Rust aids users and developers alike, and the
-benefit far outweighs the cost of my time ~~and my sanity~~, and so this project was born.
+`xenomorph`, however, *does not* aim to be a complete drop-in replacement of `alien`. Notably,
+support for `.slp` packages — once used by Stampede Linux — has been removed, since Stampede Linux
+had been effectively dead for over twenty years with little surviving records of its package format. 
+`xenomorph`'s CLI interface, while currently compatible with `alien`, may change in the future,
+and so will the packages it generates.
 
 ## Known Issues
 
@@ -45,24 +33,16 @@ benefit far outweighs the cost of my time ~~and my sanity~~, and so this project
  - Currently dependencies from `.deb` files are not processed, which means `.rpm`
 	   packages converted from `.deb` packages may not install correctly.
 
- - You can't install the package yet, and `alien` currently doesn't clean things up.
+As well as issues that have been carried over from `alien`:
 
-From the original `alien`'s 8.95 release (which is to my knowledge the latest), on top of which this port is based:
+ - Relocatable conffiles, partially relocatable packages, and multipart packages are not yet supported
 
- - Handling postinst script when converting to/from .slp packages.
-  
- - Alien needs to handle relocatable conffiles, partially relocatable
-  packages, and packages that have multiple parts that relocate
-  differently.
+ - RPM ghost files are not yet supported
 
- - RPM ghost file support. On conversion, make preinst move file out of the
-  way, postinst put it back. Thus emulating the behavior of rpm.
-
- - Seems slackware packages may now incliude an install/slack-desc
-  with a description in it
+ - In Slackware packages, descriptions in install/slack-desc may be ignored
 
 ## License
 
-`alien` is licensed under [the GNU General Public License, version 2](LICENSE), or (at your option) any later version.
+`xenomorph` is licensed under [the GNU General Public License, version 2](LICENSE), or (at your option) any later version.
 
-© 2023 Leah "pluie" Chen
+© 2023–2024 Leah Amelia "pluie" Chen

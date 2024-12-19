@@ -298,7 +298,7 @@ Architecture: amd64
 Maintainer: Leah Amelia Chen <hi@pluie.me>
 Section: Utilities
 Description:
-  Morph between package formats
+  Shapeshift between package formats
 ";
 
 		let mut control_files = tar::Builder::new(vec![]);
@@ -337,7 +337,7 @@ Description:
 		assert_eq!(info.arch, "amd64");
 		assert_eq!(info.maintainer, "Leah Amelia Chen <hi@pluie.me>");
 		assert_eq!(info.group, "Utilities");
-		assert_eq!(info.description, "Morph between package formats\n");
+		assert_eq!(info.description, "Shapeshift between package formats\n");
 
 		Ok(())
 	}

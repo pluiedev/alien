@@ -3,7 +3,7 @@
 
 use std::{os::unix::prelude::PermissionsExt, path::Path};
 
-use alien::{
+use xenomorph::{
 	util::{args, Args, Verbosity},
 	AnySourcePackage, AnyTargetPackage, Format, PackageInfo, SourcePackage, TargetPackage,
 };
@@ -37,17 +37,18 @@ fn main() -> Result<()> {
 			"The options --nopatch and --patchfile cannot be used together.",
 		)
 		.to_options()
-		.usage("Usage: alien [options] file [...]")
+		.usage("Usage: xenomorph [options] file [...]")
 		.version(env!("CARGO_PKG_VERSION"))
 		.run();
 
 	Verbosity::set(args.verbosity);
 
-	// Check alien's working environment.
+	// Check xenomorph's working environment.
+	// FIXME: We should let people decide the output directory.
 	if std::fs::write("test", "test").is_ok() {
 		std::fs::remove_file("test")?;
 	} else {
-		bail!("Cannot write to current directory. Try moving to /tmp and re-running alien.");
+		bail!("Cannot write to current directory. Try moving to /tmp and re-running `xenomorph`.");
 	}
 
 	// Check if we're root.
@@ -55,7 +56,7 @@ fn main() -> Result<()> {
 		if args.formats.contains(Format::Deb) && !args.generate && !args.deb_args.single {
 			bail!("Must run as root to convert to deb format (or you may use fakeroot).");
 		}
-		eprintln!("Warning: alien is not running as root!");
+		eprintln!("Warning: `xenomorph` is not running as root!");
 		eprintln!("Warning: Ownerships of files in the generated packages will probably be wrong.");
 	}
 
@@ -152,7 +153,9 @@ fn cleanup(unpacked: &Path) -> Result<()> {
 	if !unpacked.as_os_str().is_empty() {
 		// This should never happen, but it pays to check.
 		if unpacked.as_os_str() == "/" {
-			bail!("alien internal error: unpacked_tree is set to '/'. Please file a bug report!");
+			bail!(
+				"xenomorph internal error: unpacked_tree is set to '/'. Please file a bug report!"
+			);
 		}
 		if unpacked.is_dir() {
 			// Just in case some dir perms are too screwed up to remove

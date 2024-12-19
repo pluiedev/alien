@@ -24,32 +24,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
-name = "alien"
-version = "0.1.0"
-dependencies = [
- "ar",
- "base64",
- "bpaf",
- "bzip2",
- "color-eyre",
- "enum_dispatch",
- "enumflags2",
- "eyre",
- "flate2",
- "fs_extra",
- "glob",
- "liblzma",
- "nix",
- "simple-eyre",
- "snailquote",
- "subprocess",
- "tar",
- "time",
- "which",
- "whoami",
-]
-
-[[package]]
 name = "ar"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -938,4 +912,30 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "rustix",
+]
+
+[[package]]
+name = "xenomorph"
+version = "0.1.0"
+dependencies = [
+ "ar",
+ "base64",
+ "bpaf",
+ "bzip2",
+ "color-eyre",
+ "enum_dispatch",
+ "enumflags2",
+ "eyre",
+ "flate2",
+ "fs_extra",
+ "glob",
+ "liblzma",
+ "nix",
+ "simple-eyre",
+ "snailquote",
+ "subprocess",
+ "tar",
+ "time",
+ "which",
+ "whoami",
 ]

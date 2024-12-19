@@ -108,7 +108,9 @@ Group: Converted/{group}
 		if *use_scripts {
 			for script in Script::ALL {
 				let name = script.rpm_scriptlet_name();
-				let Some(script) = scripts.get(&script) else { continue; };
+				let Some(script) = scripts.get(&script) else {
+					continue;
+				};
 				write!(spec_file, "{name}\n{script}\n\n")?;
 			}
 		}
@@ -118,11 +120,11 @@ Group: Converted/{group}
 r#"%description
 {description}
 
-(Converted from a {original_format} package by alien version {alien_version}.)
+(Converted from a {original_format} package by `xenomorph` version {xenomorph_version}.)
 
 %files
 {file_list}"#,
-			alien_version = env!("CARGO_PKG_VERSION")
+			xenomorph_version = env!("CARGO_PKG_VERSION")
 		)?;
 
 		Ok(Self {
@@ -214,7 +216,9 @@ r#"%description
 		// scrap of shell script to make it unextract and run on the fly.
 
 		for script in Script::ALL {
-			let Some(script) = info.scripts.get_mut(&script) else { continue; };
+			let Some(script) = info.scripts.get_mut(&script) else {
+				continue;
+			};
 
 			if script.chars().all(char::is_whitespace) {
 				continue; // it's blank.
@@ -232,12 +236,12 @@ r#"%description
 			let patched = format!(
 r#"#!/bin/sh
 set -e
-mkdir /tmp/alien.$$
-echo '{encoded}' | base64 -d > /tmp/alien.$$/script
-chmod 755 /tmp/alien.$$/script
-/tmp/alien.$$/script "$@"
-rm -f /tmp/alien.$$/script
-rmdir /tmp/alien.$$
+mkdir /tmp/xenomorph.$$
+echo '{encoded}' | base64 -d > /tmp/xenomorph.$$/script
+chmod 755 /tmp/xenomorph.$$/script
+/tmp/xenomorph.$$/script "$@"
+rm -f /tmp/xenomorph.$$/script
+rmdir /tmp/xenomorph.$$
 "#
 			);
 			*script = patched;

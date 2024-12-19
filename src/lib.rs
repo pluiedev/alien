@@ -193,7 +193,7 @@ pub struct PackageInfo {
 	/// A map of file paths to ownership and mode information.
 	///
 	/// Some files cannot be represented on the filesystem — typically, that is
-	/// because the owners or groups just don't exist yet — so `alien` has to
+	/// because the owners or groups just don't exist yet — so `xenomorph` has to
 	/// store to preserve their ownership information (as well as mode information
 	/// for `setuid` files) externally in this map.
 	pub file_info: HashMap<PathBuf, FileInfo>,
@@ -213,7 +213,7 @@ pub struct FileInfo {
 /// Due to historical reasons, there are many names for these scripts across
 /// different package managers. Here's a table linking all of them together:
 ///
-/// | `alien` name              | Debian-style name | RPM scriptlet name | RPM query key | `tgz` script name | `pkg` script name |
+/// | `xenomorph` name          | Debian-style name | RPM scriptlet name | RPM query key | `tgz` script name | `pkg` script name |
 /// |---------------------------|-------------------|--------------------|---------------|-------------------|-------------------|
 /// | [`Self::BeforeInstall`]   | `preinst`         | `%pre`             | `%{PREIN}`    | `predoinst.sh`    | `preinstall`      |
 /// | [`Self::AfterInstall`]    | `postinst`        | `%post`            | `%{POSTIN}`   | `doinst.sh`       | `postinstall`     |

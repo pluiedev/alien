@@ -41,7 +41,7 @@ pub struct Args {
 	#[bpaf(argument("arch"))]
 	pub target: Option<String>,
 
-	/// Display each command alien runs.
+	/// Display each command xenomorph runs.
 	#[bpaf(external)]
 	pub verbosity: Verbosity,
 
@@ -60,7 +60,7 @@ pub struct Args {
 #[derive(Debug, bpaf::Bpaf)]
 pub struct DebArgs {
 	/// Specify patch file to use instead of automatically looking for patch
-	/// in /var/lib/alien.
+	/// in /var/lib/xenomorph.
 	#[bpaf(
 		argument("patch"),
 		guard(patch_file_exists, "Specified patch file cannot be found")
@@ -129,7 +129,7 @@ fn patch_file_exists(s: &Option<PathBuf>) -> bool {
 fn verbosity() -> impl Parser<Verbosity> {
 	let verbose = long("verbose")
 		.short('v')
-		.help("Display each command alien runs.")
+		.help("Display each command `xenomorph` runs.")
 		.switch();
 	let very_verbose = long("veryverbose")
 		.help("Be verbose, and also display output of run commands.")

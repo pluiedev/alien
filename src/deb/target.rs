@@ -18,6 +18,7 @@ use crate::{
 	Args, PackageInfo, Script, TargetPackage,
 };
 
+// FIXME: Use custom patch dirs (maybe break compat with alien?)
 const PATCH_DIRS: &[&str] = &["/var/lib/alien", "/usr/share/alien/patches"];
 
 #[derive(Debug)]
@@ -208,7 +209,7 @@ impl DebTarget {
 		}
 		write!(
 			desc,
-			" (Converted from a {} package by alien version {}.)",
+			" (Converted from a {} package by xenomorph version {}.)",
 			info.original_format,
 			env!("CARGO_PKG_VERSION")
 		)?;
@@ -299,8 +300,8 @@ impl TargetPackage for DebTarget {
 		let strings = output
 			.lines()
 			.filter_map(|s| s.ok())
-			// Ignore errors we don't care about
-			.filter(|s| !s.contains("unknown-section alien"))
+			// Lintian doesn't know about our custom section
+			.filter(|s| !s.contains("unknown-section xenomorph"))
 			.map(|s| s.trim().to_owned())
 			.collect();
 
@@ -357,13 +358,13 @@ impl DebWriter {
 			file,
 r#"{name} ({version}-{release}) experimental; urgency=low
 
-  * Converted from {original_format} format to .deb by alien version {alien_version}
+  * Converted from {original_format} format to .deb by xenomorph version {xenomorph_version}
 
   {changelog_text}
 
   -- {realname} <{email}>  {date}
 "#,
-			alien_version = env!("CARGO_PKG_VERSION")
+			xenomorph_version = env!("CARGO_PKG_VERSION")
 		)?;
 
 		dir.pop();
@@ -394,7 +395,7 @@ r#"{name} ({version}-{release}) experimental; urgency=low
 		write!(
 			file,
 r#"Source: {name}
-Section: alien
+Section: xenomorph
 Priority: extra
 Maintainer: {realname} <{email}>
 
@@ -435,7 +436,7 @@ Description: {summary}
 		#[rustfmt::skip]
 		writeln!(
 			file,
-r#"This package was debianized by the alien program by converting
+r#"This package was repackaged by `xenomorph` by converting
 a binary .{original_format} package on {date}
 
 Copyright: {copyright}
@@ -495,7 +496,7 @@ Information from the binary package:
 		writeln!(
 			file,
 r#"#!/usr/bin/make -f
-# debian/rules for alien
+# debian/rules for xenomorph
 
 PACKAGE = $(shell dh_listpackages)
 
@@ -600,7 +601,7 @@ binary: binary-indep binary-arch
 			}
 		}
 
-		let mut injection = String::from("\n# alien added permissions fixup code");
+		let mut injection = String::from("\n# xenomorph added permissions fixup code");
 
 		for (file, file_info) in file_info {
 			// no single quotes in single quotes...
